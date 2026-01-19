@@ -57,14 +57,17 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        # Chỉ add file kết quả trong thư mục live
         git add data/live/
         
-        # Kiểm tra xem có gì thay đổi không rồi mới commit
         if git diff --staged --quiet; then
-          echo "⚠️ Không có dữ liệu mới để commit hôm nay."
+          echo "⚠️ Không có dữ liệu mới để commit."
         else
-          git commit -m "Auto-update: Cập nhật dữ liệu bán hàng ngày $(date +'%Y-%m-%d')"
-          git push
+          git commit -m "Auto-update: Cập nhật dữ liệu ngày $(date +'%Y-%m-%d')"
+          
+          # --- QUAN TRỌNG: Dòng này giúp chữa lỗi "rejected" ---
+          git pull --rebase origin main
+          # -----------------------------------------------------
+          
+          git push origin main
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi

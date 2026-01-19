@@ -65,8 +65,11 @@ jobs:
           echo "⚠️ Không có dữ liệu mới để commit hôm nay."
         else
           git commit -m "Auto-update: Cập nhật dữ liệu bán hàng ngày $(date +'%Y-%m-%d')"
-          git push
+          
+          # --- QUAN TRỌNG: PHẢI PULL TRƯỚC KHI PUSH ---
+          git pull --rebase origin main
+          
+          # Sau khi pull thành công mới push
+          git push origin main
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi
-        git pull --rebase origin main  # Kéo code mới nhất về trước để tránh xung đột
-        git push origin main

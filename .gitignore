@@ -19,6 +19,18 @@ yarn-error.log*
 .vscode/
 .idea/
 
+# Bỏ qua thư viện nặng của Frontend
+node_modules/
+.next/
+out/
+
+# Bỏ qua dữ liệu thô nặng
+data/raw/
+
+# Các file hệ thống
+.DS_Store
+.env
+
 # Data (Tùy chọn)
 # Nếu file raw quá nặng (>100MB) thì bỏ comment dòng dưới để không up lên
 # data/raw/*.csv

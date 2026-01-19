@@ -68,3 +68,5 @@ jobs:
           git push
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi
+        git pull --rebase origin main  # Kéo code mới nhất về trước để tránh xung đột
+        git push origin main

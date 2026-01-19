@@ -85,4 +85,8 @@ def load_and_merge_data(raw_data_dir):
 
     except Exception as e:
         print(f"⚠️ Lỗi nghiêm trọng khi xử lý dữ liệu: {e}")
+<<<<<<< HEAD
         return None
+=======
+        return None
+>>>>>>> 753a0177f37f5eb92a061e1266040d2178ffd18e

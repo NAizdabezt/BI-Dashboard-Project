@@ -62,12 +62,22 @@ jobs:
         if git diff --staged --quiet; then
           echo "⚠️ Không có dữ liệu mới để commit."
         else
+<<<<<<< HEAD
           git commit -m "Auto-update: Cập nhật dữ liệu ngày $(date +'%Y-%m-%d')"
           
           # --- QUAN TRỌNG: Dòng này giúp chữa lỗi "rejected" ---
           git pull --rebase origin main
           # -----------------------------------------------------
           
+=======
+          git commit -m "Auto-update: Cập nhật dữ liệu bán hàng ngày $(date +'%Y-%m-%d')"
+          
+          # --- QUAN TRỌNG: KÉO CODE VỀ TRƯỚC KHI ĐẨY ---
+          # --rebase giúp gộp code mượt mà hơn
+          git pull --rebase origin main
+          
+          # Sau khi pull xong mới được push
+>>>>>>> 753a0177f37f5eb92a061e1266040d2178ffd18e
           git push origin main
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi

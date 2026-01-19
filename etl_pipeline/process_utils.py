@@ -1,9 +1,38 @@
 import pandas as pd
 import os
 
+# --- HÀM 1: Từ điển dịch (Để riêng ở ngoài cho gọn) ---
+def get_category_translation():
+    return {
+        'cama_mesa_banho': 'Giường - Bàn - Phòng tắm',
+        'beleza_saude': 'Sức khỏe & Làm đẹp',
+        'esporte_lazer': 'Thể thao & Giải trí',
+        'moveis_decoracao': 'Nội thất & Trang trí',
+        'informatica_acessorios': 'Máy tính & Phụ kiện',
+        'utilidades_domesticas': 'Đồ gia dụng',
+        'relogios_presentes': 'Đồng hồ & Quà tặng',
+        'telefonia': 'Điện thoại & Viễn thông',
+        'automotivo': 'Phụ tùng ô tô',
+        'brinquedos': 'Đồ chơi',
+        'cool_stuff': 'Đồ độc lạ (Cool Stuff)',
+        'ferramentas_jardim': 'Dụng cụ làm vườn',
+        'perfumaria': 'Nước hoa',
+        'bebes': 'Mẹ & Bé',
+        'eletronicos': 'Điện tử',
+        'papelaria': 'Văn phòng phẩm',
+        'fashion_bolsas_e_acessorios': 'Thời trang & Túi xách',
+        'pet_shop': 'Thú cưng',
+        'moveis_escritorio': 'Nội thất văn phòng',
+        'malas_acessorios': 'Vali & Hành lý',
+        'consoles_games': 'Game & Console',
+        'musica': 'Nhạc cụ',
+        'moveis_quarto': 'Nội thất phòng ngủ'
+    }
+
+# --- HÀM 2: Hàm xử lý chính ---
 def load_and_merge_data(raw_data_dir):
     """
-    Phiên bản V2: Fix lỗi tách dòng (Ghost Rows) và dữ liệu trùng lặp.
+    Phiên bản V3: Fix lỗi tách dòng + Dịch danh mục sang Tiếng Việt.
     """
     try:
         print("⏳ Đang đọc dữ liệu từ các file CSV...")
@@ -30,39 +59,32 @@ def load_and_merge_data(raw_data_dir):
         df_orders = df_orders.dropna(subset=['order_purchase_timestamp'])
         df_orders['order_purchase_timestamp'] = pd.to_datetime(df_orders['order_purchase_timestamp'])
 
-        # 2. Gộp bảng (QUAN TRỌNG: Thứ tự gộp để không bị tách dòng)
-        # B1: Orders + Items (Inner Join: Bắt buộc phải có hàng mới tính)
+        # 2. Gộp bảng
         merged_df = pd.merge(df_orders, df_items, on='order_id', how='inner')
-
-        # B2: + Customers (Left Join: Gắn thông tin khách vào đơn)
-        # Lưu ý: Merge vào bảng đã có items để đảm bảo không mất dòng
         merged_df = pd.merge(merged_df, df_customers, on='customer_id', how='left')
-
-        # B3: + Products (Left Join: Gắn thông tin sp)
         final_df = pd.merge(merged_df, df_products, on='product_id', how='left')
 
-        # 1. Điền dữ liệu thiếu
+        # 3. Xử lý & Dịch thuật
         final_df['product_category_name'] = final_df['product_category_name'].fillna('unknown')
         
-        # 2. Lấy từ điển dịch
+        # --- DỊCH SANG TIẾNG VIỆT ---
         translate_dict = get_category_translation()
+        # Tạo cột Category (Tiếng Việt)
+        final_df['Category'] = final_df['product_category_name'].map(translate_dict).fillna(final_df['product_category_name'])
         
-        # 3. Tạo cột mới 'Category_VN' (Dùng map để dịch, nếu không có trong từ điển thì giữ nguyên tiếng gốc)
-        final_df['Category_VN'] = final_df['product_category_name'].map(translate_dict).fillna(final_df['product_category_name'])
-        
-        # 4. Gom các nhóm nhỏ lẻ ít quan trọng vào nhóm 'Khác' để biểu đồ đẹp hơn (Tùy chọn)
+        # Gom nhóm nhỏ lẻ thành 'Khác'
         top_categories = list(translate_dict.values())
-        final_df.loc[~final_df['Category_VN'].isin(top_categories), 'Category_VN'] = 'Khác'
-        final_df = final_df[final_df['price'] < 50000] # Lọc nhiễu giá
+        final_df.loc[~final_df['Category'].isin(top_categories), 'Category'] = 'Khác'
+        
+        # Lọc giá trị nhiễu
+        final_df = final_df[final_df['price'] < 50000]
 
-        # --- GIAI ĐOẠN 5 (MỚI): CHỐT CHẶN CUỐI CÙNG ---
-        # Đây là bước sửa lỗi của bạn:
-        # Xóa các dòng bị lỗi khuyết thông tin quan trọng (nguyên nhân gây lặp dòng ảo)
+        # --- CHỐT CHẶN CUỐI CÙNG (Fix lỗi lặp dòng) ---
         before_drop = len(final_df)
         final_df = final_df.dropna(subset=['seller_id', 'customer_unique_id'])
-        print(f"✂️ Đã loại bỏ {before_drop - len(final_df)} dòng lỗi (thiếu seller hoặc customer).")
+        print(f"✂️ Đã loại bỏ {before_drop - len(final_df)} dòng lỗi (ghost rows).")
 
-        # 4. Chọn cột
+        # 4. Chọn cột (Lấy cột Category tiếng Việt thay vì cột cũ)
         columns_to_keep = [
             'order_id', 
             'order_purchase_timestamp', 
@@ -73,41 +95,16 @@ def load_and_merge_data(raw_data_dir):
             'customer_unique_id',       
             'customer_city',            
             'customer_state',           
-            'product_category_name',    
+            'Category',                  # <-- QUAN TRỌNG: Lấy cột Tiếng Việt
             'product_id'
         ]
         
-        return final_df[columns_to_keep]
+        # Đổi tên cột cho đẹp chuẩn Dashboard
+        final_df_clean = final_df[columns_to_keep]
+        final_df_clean.columns = ['OrderID', 'OrderDate', 'Revenue', 'freight_value', 'Status', 'seller_id', 'customer_unique_id', 'customer_city', 'customer_state', 'Category', 'product_id']
         
-def get_category_translation():
-    return {
-        'cama_mesa_banho': 'Giường - Bàn - Phòng tắm',
-        'beleza_saude': 'Sức khỏe & Làm đẹp',
-        'esporte_lazer': 'Thể thao & Giải trí',
-        'moveis_decoracao': 'Nội thất & Trang trí',
-        'informatica_acessorios': 'Máy tính & Phụ kiện',
-        'utilidades_domesticas': 'Đồ gia dụng',
-        'relogios_presentes': 'Đồng hồ & Quà tặng',
-        'telefonia': 'Điện thoại & Viễn thông',
-        'automotivo': 'Phụ tùng ô tô',
-        'brinquedos': 'Đồ chơi',
-        'cool_stuff': 'Đồ độc lạ (Cool Stuff)',
-        'ferramentas_jardim': 'Dụng cụ làm vườn',
-        'perfumaria': 'Nước hoa',
-        'bebes': 'Mẹ & Bé',
-        'eletronicos': 'Điện tử',
-        'papelaria': 'Văn phòng phẩm',
-        'fashion_bolsas_e_acessorios': 'Thời trang & Túi xách',
-        'pet_shop': 'Thú cưng',
-        'moveis_escritorio': 'Nội thất văn phòng',
-        'malas_acessorios': 'Vali & Hành lý',
-        'consoles_games': 'Game & Console',
-        'musica': 'Nhạc cụ',
-        'moveis_quarto': 'Nội thất phòng ngủ'
-        # Các danh mục khác sẽ mặc định giữ nguyên hoặc để 'Khác'
-    }
+        return final_df_clean
 
-        
     except Exception as e:
         print(f"⚠️ Lỗi xử lý: {e}")
         return None

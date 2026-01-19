@@ -3,26 +3,20 @@ import os
 
 def load_and_merge_data(raw_data_dir):
     """
-    Hàm này đọc và gộp 4 bảng dữ liệu quan trọng nhất:
-    1. Orders (Thời gian, Trạng thái)
-    2. Items (Giá tiền, Mã sản phẩm, MÃ NGƯỜI BÁN) <--- Quan trọng cho KPI nhân viên
-    3. Products (Danh mục sản phẩm)
-    4. Customers (Địa điểm, ID duy nhất của khách) <--- Quan trọng cho phân tích khách hàng
+    Phiên bản V2: Fix lỗi tách dòng (Ghost Rows) và dữ liệu trùng lặp.
     """
     try:
         print("⏳ Đang đọc dữ liệu từ các file CSV...")
-        # 1. Định nghĩa đường dẫn file
         orders_path = os.path.join(raw_data_dir, 'olist_orders_dataset.csv')
         items_path = os.path.join(raw_data_dir, 'olist_order_items_dataset.csv')
         products_path = os.path.join(raw_data_dir, 'olist_products_dataset.csv')
         customers_path = os.path.join(raw_data_dir, 'olist_customers_dataset.csv')
         
-        # Kiểm tra file tồn tại
         if not all(os.path.exists(p) for p in [orders_path, items_path, products_path, customers_path]):
-            print("❌ Thiếu một trong các file dữ liệu đầu vào!")
+            print("❌ Thiếu file dữ liệu đầu vào!")
             return None
 
-        # 2. Đọc file
+        # Đọc file
         df_orders = pd.read_csv(orders_path)
         df_items = pd.read_csv(items_path)
         df_products = pd.read_csv(products_path)
@@ -30,33 +24,35 @@ def load_and_merge_data(raw_data_dir):
 
         print("🧹 Đang tiến hành làm sạch và gộp dữ liệu...")
 
-        # --- GIAI ĐOẠN 1: LÀM SẠCH SƠ BỘ ---
-        # Chỉ lấy đơn hàng thành công
+        # 1. Lọc đơn hàng hợp lệ
         valid_statuses = ['delivered', 'shipped', 'invoiced']
         df_orders = df_orders[df_orders['order_status'].isin(valid_statuses)]
         df_orders = df_orders.dropna(subset=['order_purchase_timestamp'])
         df_orders['order_purchase_timestamp'] = pd.to_datetime(df_orders['order_purchase_timestamp'])
 
-        # --- GIAI ĐOẠN 2: GỘP BẢNG (MERGE) ---
-        
-        # Bước A: Orders + Items (Để lấy thông tin Sản phẩm & Seller)
-        merged_1 = pd.merge(df_orders, df_items, on='order_id', how='inner')
+        # 2. Gộp bảng (QUAN TRỌNG: Thứ tự gộp để không bị tách dòng)
+        # B1: Orders + Items (Inner Join: Bắt buộc phải có hàng mới tính)
+        merged_df = pd.merge(df_orders, df_items, on='order_id', how='inner')
 
-        # Bước B: + Products (Để lấy tên Danh mục)
-        merged_2 = pd.merge(merged_1, df_products, on='product_id', how='left')
+        # B2: + Customers (Left Join: Gắn thông tin khách vào đơn)
+        # Lưu ý: Merge vào bảng đã có items để đảm bảo không mất dòng
+        merged_df = pd.merge(merged_df, df_customers, on='customer_id', how='left')
 
-        # Bước C: + Customers (Để lấy Customer Unique ID và Địa chỉ)
-        final_df = pd.merge(merged_2, df_customers, on='customer_id', how='left')
+        # B3: + Products (Left Join: Gắn thông tin sp)
+        final_df = pd.merge(merged_df, df_products, on='product_id', how='left')
 
-        # --- GIAI ĐOẠN 3: XỬ LÝ SAU GỘP ---
-        
-        # Điền "Unknown" cho danh mục thiếu
+        # 3. Xử lý dữ liệu thiếu
         final_df['product_category_name'] = final_df['product_category_name'].fillna('Other')
-        
-        # Loại bỏ giá trị nhiễu (Ví dụ giá > 50tr)
-        final_df = final_df[final_df['price'] < 50000]
+        final_df = final_df[final_df['price'] < 50000] # Lọc nhiễu giá
 
-        # --- GIAI ĐOẠN 4: CHỌN CỘT CẦN THIẾT ---
+        # --- GIAI ĐOẠN 5 (MỚI): CHỐT CHẶN CUỐI CÙNG ---
+        # Đây là bước sửa lỗi của bạn:
+        # Xóa các dòng bị lỗi khuyết thông tin quan trọng (nguyên nhân gây lặp dòng ảo)
+        before_drop = len(final_df)
+        final_df = final_df.dropna(subset=['seller_id', 'customer_unique_id'])
+        print(f"✂️ Đã loại bỏ {before_drop - len(final_df)} dòng lỗi (thiếu seller hoặc customer).")
+
+        # 4. Chọn cột
         columns_to_keep = [
             'order_id', 
             'order_purchase_timestamp', 
@@ -71,12 +67,8 @@ def load_and_merge_data(raw_data_dir):
             'product_id'
         ]
         
-        # Chỉ giữ lại các cột đã chọn
-        final_df_clean = final_df[columns_to_keep]
-
-        print(f"✅ Đã xử lý xong! Tổng cộng: {len(final_df_clean)} dòng.")
-        return final_df_clean
+        return final_df[columns_to_keep]
 
     except Exception as e:
-        print(f"⚠️ Lỗi nghiêm trọng khi xử lý dữ liệu: {e}")
+        print(f"⚠️ Lỗi xử lý: {e}")
         return None

@@ -66,10 +66,11 @@ jobs:
         else
           git commit -m "Auto-update: Cập nhật dữ liệu bán hàng ngày $(date +'%Y-%m-%d')"
           
-          # --- QUAN TRỌNG: PHẢI PULL TRƯỚC KHI PUSH ---
+          # --- QUAN TRỌNG: KÉO CODE VỀ TRƯỚC KHI ĐẨY ---
+          # --rebase giúp gộp code mượt mà hơn
           git pull --rebase origin main
           
-          # Sau khi pull thành công mới push
+          # Sau khi pull xong mới được push
           git push origin main
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi

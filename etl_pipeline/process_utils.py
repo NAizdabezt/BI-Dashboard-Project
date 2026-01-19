@@ -15,7 +15,7 @@ def load_and_merge_data(raw_data_dir):
         orders_path = os.path.join(raw_data_dir, 'olist_orders_dataset.csv')
         items_path = os.path.join(raw_data_dir, 'olist_order_items_dataset.csv')
         products_path = os.path.join(raw_data_dir, 'olist_products_dataset.csv')
-        customers_path = os.path.join(raw_data_dir, 'olist_customers_dataset.csv') # Mới thêm
+        customers_path = os.path.join(raw_data_dir, 'olist_customers_dataset.csv')
         
         # Kiểm tra file tồn tại
         if not all(os.path.exists(p) for p in [orders_path, items_path, products_path, customers_path]):
@@ -40,14 +40,12 @@ def load_and_merge_data(raw_data_dir):
         # --- GIAI ĐOẠN 2: GỘP BẢNG (MERGE) ---
         
         # Bước A: Orders + Items (Để lấy thông tin Sản phẩm & Seller)
-        # Lưu ý: Một đơn có thể có nhiều sản phẩm -> nhiều dòng
         merged_1 = pd.merge(df_orders, df_items, on='order_id', how='inner')
 
         # Bước B: + Products (Để lấy tên Danh mục)
         merged_2 = pd.merge(merged_1, df_products, on='product_id', how='left')
 
         # Bước C: + Customers (Để lấy Customer Unique ID và Địa chỉ)
-        # Olist nối Orders với Customers qua 'customer_id'
         final_df = pd.merge(merged_2, df_customers, on='customer_id', how='left')
 
         # --- GIAI ĐOẠN 3: XỬ LÝ SAU GỘP ---
@@ -59,21 +57,17 @@ def load_and_merge_data(raw_data_dir):
         final_df = final_df[final_df['price'] < 50000]
 
         # --- GIAI ĐOẠN 4: CHỌN CỘT CẦN THIẾT ---
-        # Đây là lúc quyết định giữ lại gì để dùng cho Dashboard
         columns_to_keep = [
             'order_id', 
-            'order_purchase_timestamp', # Thời gian
-            'price',                    # Doanh thu
-            'freight_value',            # Phí ship
-            'order_status',             # Trạng thái
-            
-            # --- MỚI THÊM CHO ĐẦY ĐỦ ---
-            'seller_id',                # Mã nhân viên (Để tính KPI nhân viên)
-            'customer_unique_id',       # Mã khách hàng chuẩn (Để phân tích khách thân thiết)
-            'customer_city',            # Thành phố khách
-            'customer_state',           # Tỉnh/Bang khách (Vẽ bản đồ)
-            
-            'product_category_name',    # Danh mục SP
+            'order_purchase_timestamp', 
+            'price',                    
+            'freight_value',            
+            'order_status',             
+            'seller_id',                
+            'customer_unique_id',       
+            'customer_city',            
+            'customer_state',           
+            'product_category_name',    
             'product_id'
         ]
         
@@ -85,8 +79,4 @@ def load_and_merge_data(raw_data_dir):
 
     except Exception as e:
         print(f"⚠️ Lỗi nghiêm trọng khi xử lý dữ liệu: {e}")
-<<<<<<< HEAD
         return None
-=======
-        return None
->>>>>>> 753a0177f37f5eb92a061e1266040d2178ffd18e

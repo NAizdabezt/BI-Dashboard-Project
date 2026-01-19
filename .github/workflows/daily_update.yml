@@ -59,14 +59,16 @@ jobs:
         
         git add data/live/
         
+        # Kiểm tra xem có gì thay đổi không
         if git diff --staged --quiet; then
           echo "⚠️ Không có dữ liệu mới để commit."
         else
           git commit -m "Auto-update: Cập nhật dữ liệu ngày $(date +'%Y-%m-%d')"
           
-          # --- QUAN TRỌNG: Dòng này giúp chữa lỗi "rejected" ---
-          git pull --rebase origin main
-          # -----------------------------------------------------
+          # --- ĐOẠN QUAN TRỌNG NHẤT ĐÂY ---
+          # Kéo code mới nhất về trước khi đẩy
+          git pull origin main --rebase
+          # ---------------------------------
           
           git push origin main
           echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"

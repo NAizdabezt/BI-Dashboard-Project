@@ -1,0 +1,20 @@
+# --- Xử lý dữ liệu & Tính toán ---
+pandas
+numpy
+
+# --- Trực quan hóa (Vẽ biểu đồ trong Notebook) ---
+matplotlib
+seaborn
+
+# --- Data Engineering (Tự động hóa) ---
+kaggle
+holidays
+
+# --- AI & Machine Learning (Sắp tới sẽ dùng) ---
+scikit-learn
+joblib
+prophet
+
+# --- Backend API (Cái bạn vừa làm) ---
+fastapi
+uvicorn

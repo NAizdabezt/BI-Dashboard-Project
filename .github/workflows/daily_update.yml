@@ -26,10 +26,11 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 3. Cài đặt các thư viện cần thiết
+    # 3. Cài đặt thư viện (Đã sửa đúng đường dẫn)
     - name: Install dependencies
       run: |
-        pip install pandas kaggle
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
 
     # 4. Tải dữ liệu từ Kaggle (Dùng Secret bạn vừa tạo)
     - name: Download Dataset from Kaggle
@@ -51,19 +52,30 @@ jobs:
     - name: Run ETL Script (Time Travel)
       run: python etl_pipeline/daily_replay.py
 
+    # --- BƯỚC NÀY NẾU BẠN MUỐN CHẠY TRAIN MODEL TỰ ĐỘNG THÌ BỎ COMMENT RA ---
+    # - name: Train AI Model
+    #   run: python notebooks/train_pipeline.py
+    # ------------------------------------------------------------------------
+
     # 6. Lưu kết quả mới vào Git (Commit & Push)
     - name: Commit and Push changes
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        # SỬA DÒNG NÀY: Add tất cả thay đổi (CSV mới + File ngày mới)
+        # --- QUAN TRỌNG: Add tất cả thay đổi (Data, Model, State file) ---
         git add .
+        # -----------------------------------------------------------------
         
         if git diff --staged --quiet; then
-          echo "⚠️ Không có gì thay đổi."
+          echo "⚠️ Không có dữ liệu mới để commit."
         else
-          git commit -m "Auto-update: Dữ liệu ngày $(cat simulation_state.txt)"
+          git commit -m "Auto-update: Cập nhật hệ thống ngày $(date +'%Y-%m-%d')"
+          
+          # --- QUAN TRỌNG: Dòng này giúp chữa lỗi "rejected" ---
           git pull --rebase origin main
+          # -----------------------------------------------------
+          
           git push origin main
+          echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi

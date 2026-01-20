@@ -1,97 +1,113 @@
 "use client";
 
+import { useMemo } from 'react';
 import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
   Tooltip,
-  Legend,
-} from "chart.js";
-import { Line } from "react-chartjs-2";
-import { useMemo } from "react";
-
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
+  ResponsiveContainer,
   Legend
-);
+} from 'recharts';
 
-interface Props {
-  data: any[];
+// 1. Định nghĩa kiểu dữ liệu đầu vào
+interface RawDataItem {
+  order_purchase_timestamp: string;
+  price: number | string;
+  [key: string]: any;
 }
 
-export default function RevenueLineChart({ data }: Props) {
+interface RevenueLineChartProps {
+  data: RawDataItem[];
+}
+
+export default function RevenueLineChart({ data }: RevenueLineChartProps) {
+  
+  // 2. Xử lý dữ liệu: Gom nhóm theo ngày & Tính tổng tiền
   const chartData = useMemo(() => {
-    // 1. Nhóm doanh thu theo ngày
-    const dateMap: Record<string, number> = {};
+    if (!data || data.length === 0) return [];
 
-    // Sắp xếp dữ liệu theo thời gian tăng dần
-    const sortedData = [...data].sort((a, b) => 
-      new Date(a.OrderDate).getTime() - new Date(b.OrderDate).getTime()
-    );
+    const dailyRevenue: Record<string, number> = {};
 
-    sortedData.forEach((order) => {
-      // Chỉ lấy phần ngày (YYYY-MM-DD), bỏ qua giờ phút
-      const dateStr = order.OrderDate.split(" ")[0]; 
-      const revenue = parseFloat(order.Revenue || "0");
+    data.forEach((item) => {
+      // Lấy ngày tháng an toàn
+      const timeStr = item.order_purchase_timestamp || item.OrderDate;
+      if (!timeStr) return;
 
-      if (dateMap[dateStr]) {
-        dateMap[dateStr] += revenue;
-      } else {
-        dateMap[dateStr] = revenue;
+      try {
+        const dateKey = String(timeStr).split(' ')[0]; // Lấy phần ngày YYYY-MM-DD
+        const value = parseFloat(String(item.price || item.Revenue || 0));
+
+        if (!dailyRevenue[dateKey]) {
+          dailyRevenue[dateKey] = 0;
+        }
+        dailyRevenue[dateKey] += value;
+        
+      } catch (e) {
+        console.error("Lỗi xử lý dòng:", item);
       }
     });
 
-    // Lấy 14 ngày gần nhất để biểu đồ đỡ bị dày đặc
-    const allDates = Object.keys(dateMap);
-    const recentDates = allDates.slice(-14); 
-    const recentValues = recentDates.map(date => dateMap[date]);
+    // Chuyển object thành array và sắp xếp
+    const sortedData = Object.keys(dailyRevenue)
+      .sort()
+      .map((date) => ({
+        date,
+        revenue: Math.round(dailyRevenue[date]),
+      }));
 
-    return {
-      labels: recentDates, // Trục hoành: Ngày
-      datasets: [
-        {
-          label: "Xu hướng Doanh thu (14 ngày qua)",
-          data: recentValues, // Trục tung: Tiền
-          borderColor: "rgb(255, 99, 132)",
-          backgroundColor: "rgba(255, 99, 132, 0.5)",
-          tension: 0.3, // Làm đường cong mềm mại
-          fill: true,
-        },
-      ],
-    };
+    return sortedData;
   }, [data]);
 
-  const options = {
-    responsive: true,
-    plugins: {
-      legend: { position: "top" as const },
-      title: {
-        display: true,
-        text: "Biểu đồ Xu Hướng Tiêu Dùng",
-      },
-    },
-    scales: {
-        y: {
-            beginAtZero: true
-        }
-    }
-  };
+  if (chartData.length === 0) {
+    return <div className="p-4 text-center text-gray-500">Đang chờ dữ liệu...</div>;
+  }
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-md border border-gray-200">
-      {data.length > 0 ? (
-        <Line options={options} data={chartData} />
-      ) : (
-        <p className="text-center text-gray-400">Đang tải...</p>
-      )}
+    <div className="w-full h-[400px] bg-white p-4 rounded-lg shadow-sm">
+      <h3 className="text-lg font-semibold mb-4 text-gray-700">Doanh thu theo ngày</h3>
+      
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart
+          data={chartData}
+          margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+        >
+          <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
+          
+          <XAxis 
+            dataKey="date" 
+            tick={{ fontSize: 12 }}
+            tickFormatter={(str) => {
+                const d = new Date(str);
+                return `${d.getDate()}/${d.getMonth() + 1}`;
+            }}
+          />
+          
+          <YAxis 
+            tickFormatter={(value) => `$${value.toLocaleString()}`} 
+          />
+          
+          {/* Đã sửa lỗi cú pháp ở đoạn Tooltip này */}
+          <Tooltip 
+            formatter={(value: any) => [`$${Number(value).toLocaleString()}`, "Doanh thu"]}
+            labelFormatter={(label) => `Ngày: ${label}`}
+          />
+          
+          <Legend />
+          
+          <Line 
+            type="monotone" 
+            dataKey="revenue" 
+            name="Tổng doanh thu"
+            stroke="#8884d8" 
+            strokeWidth={2}
+            activeDot={{ r: 8 }} 
+            dot={false}
+          />
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }

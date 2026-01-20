@@ -61,8 +61,9 @@ pip install -r requirements.txt
 **3. Cấu hình "Cỗ máy thời gian"**
 
 Để bắt đầu giả lập từ một ngày trong quá khứ, hãy chỉnh sửa file **simulation_state.txt**:
-```bash
-Plaintext2018-06-01
+
+```plaintext
+2018-06-01
 ```
 **4. Chạy Pipeline thủ công**
 ```bash

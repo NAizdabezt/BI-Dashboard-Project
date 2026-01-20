@@ -47,9 +47,10 @@ BI-Dashboard-Project/
 **1. Yêu cầu tiên quyết**
 * Python 3.9 trở lên
 * Tài khoản Kaggle (để tải dữ liệu gốc)
+
 **2. Cài đặt môi trường**
 
-* Clone dự án:
+Clone dự án:
 ```bash
 git clone [https://github.com/NAizdabezt/BI-Dashboard-Project.git](https://github.com/NAizdabezt/BI-Dashboard-Project.git)
 cd BI-Dashboard-Project

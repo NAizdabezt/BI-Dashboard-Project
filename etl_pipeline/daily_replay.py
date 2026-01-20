@@ -1,83 +1,90 @@
 import pandas as pd
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from process_utils import load_and_merge_data
 
 # Cấu hình đường dẫn
 RAW_DATA_DIR = 'data/raw'
 LIVE_DATA_DIR = 'data/live'
 OUTPUT_FILE = os.path.join(LIVE_DATA_DIR, 'sales_dashboard.csv')
-
-# --- CẤU HÌNH CỖ MÁY THỜI GIAN ---
-# Bạn muốn giả lập hôm nay là ngày nào?
-# Ví dụ: Ngày 1 tháng 6 năm 2018 (Để dành 6 tháng cuối năm để test AI)
-CURRENT_SIMULATION_DATE = datetime(2018, 6, 1) 
+STATE_FILE = 'simulation_state.txt' # File lưu ngày hiện tại
 
 def main():
-    # 1. Sử dụng ngày giả lập thay vì ngày thực tế
-    today = CURRENT_SIMULATION_DATE
-    
-    print(f"🚀 Bắt đầu chạy ETL Pipeline...")
-    print(f"⏳ Đang du hành thời gian về ngày: {today.strftime('%Y-%m-%d')}")
+    # 1. ĐỌC NGÀY GIẢ LẬP TỪ FILE
+    if not os.path.exists(STATE_FILE):
+        print(f"❌ Không tìm thấy file {STATE_FILE}. Hãy tạo file này và điền ngày bắt đầu (VD: 2018-06-01).")
+        return
 
-    # 2. Lấy dữ liệu sạch từ Raw
+    with open(STATE_FILE, 'r') as f:
+        date_str = f.read().strip()
+        
+    try:
+        current_sim_date = datetime.strptime(date_str, '%Y-%m-%d')
+    except ValueError:
+        print("❌ Định dạng ngày trong file text bị sai. Hãy dùng YYYY-MM-DD.")
+        return
+
+    print(f"🚀 Bắt đầu chạy ETL Pipeline...")
+    print(f"⏳ Hệ thống đang xử lý dữ liệu ngày: {current_sim_date.strftime('%Y-%m-%d')}")
+
+    # 2. Lấy dữ liệu sạch
     full_clean_data = load_and_merge_data(RAW_DATA_DIR)
     
     if full_clean_data is None:
-        print("❌ Không đọc được dữ liệu nguồn. Dừng chương trình.")
         return
 
-    # Đảm bảo cột thời gian là datetime
     full_clean_data['order_purchase_timestamp'] = pd.to_datetime(full_clean_data['order_purchase_timestamp'])
 
-    # 3. KIỂM TRA: File kết quả đã tồn tại chưa?
-    # Lưu ý: Nếu ngày giả lập < ngày trong file cũ, ta bắt buộc phải chạy lại từ đầu (Reset)
-    # để tránh dữ liệu tương lai bị lẫn vào quá khứ.
-    
+    # 3. LOGIC CẬP NHẬT DỮ LIỆU
     is_first_run = not os.path.exists(OUTPUT_FILE)
     
-    # Kiểm tra thêm logic: Nếu file cũ đang chứa dữ liệu năm 2026 mà giờ set về 2018
-    # thì phải xóa làm lại, nếu không sẽ bị loạn thời gian.
+    # Kiểm tra nếu file cũ chứa dữ liệu tương lai (do reset ngày) -> Xóa làm lại
     if not is_first_run:
         existing_df = pd.read_csv(OUTPUT_FILE)
-        max_date_in_file = pd.to_datetime(existing_df['OrderDate']).max() # Lưu ý tên cột đã đổi trong process_utils
-        
-        if max_date_in_file > today:
-            print("⚠️ Phát hiện dữ liệu tương lai trong file cũ! Đang tiến hành Reset về quá khứ...")
-            is_first_run = True # Ép chạy lại mode Full Load
+        # Kiểm tra cột ngày (Lưu ý tên cột trong process_utils của bạn là 'OrderDate' hay 'order_purchase_timestamp'?)
+        # Ở đây tôi dùng tên cột gốc như bạn đã chốt ở bước trước:
+        if 'order_purchase_timestamp' in existing_df.columns:
+            max_date = pd.to_datetime(existing_df['order_purchase_timestamp']).max()
+            if max_date > current_sim_date:
+                print("⚠️ Phát hiện dữ liệu tương lai. Reset lại từ đầu.")
+                is_first_run = True
 
     final_df = None
 
     if is_first_run:
-        # --- MODE 1: TIME TRAVEL RESET (Chạy lại từ đầu đến mốc 6/2018) ---
-        print(f"✨ Tạo mới dữ liệu lịch sử từ đầu đến {today.strftime('%Y-%m-%d')}.")
-        
-        final_df = full_clean_data[full_clean_data['order_purchase_timestamp'] <= today]
-        
+        print(f"✨ [FULL LOAD] Tạo dữ liệu từ đầu đến {current_sim_date.strftime('%Y-%m-%d')}")
+        final_df = full_clean_data[full_clean_data['order_purchase_timestamp'] <= current_sim_date]
     else:
-        # --- MODE 2: INCREMENTAL (Dành cho việc chạy tiếp các ngày sau 1/6/2018) ---
-        print("📂 Cập nhật dữ liệu mới (Incremental Load).")
-        
+        print("📂 [INCREMENTAL] Cập nhật thêm dữ liệu mới.")
         current_df = pd.read_csv(OUTPUT_FILE)
-        current_df['order_purchase_timestamp'] = pd.to_datetime(current_df['order_purchase_timestamp']) # Lưu ý tên cột gốc
+        current_df['order_purchase_timestamp'] = pd.to_datetime(current_df['order_purchase_timestamp'])
         
-        # Lấy dữ liệu <= ngày giả lập
-        new_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= today]
-
+        # Lấy dữ liệu <= ngày giả lập hiện tại
+        new_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= current_sim_date]
+        
         combined_df = pd.concat([current_df, new_data])
-        
-        # Lọc trùng
         final_df = combined_df.drop_duplicates(subset=['order_id', 'product_id'], keep='last')
 
-    # 4. Lưu kết quả
+    # 4. LƯU DỮ LIỆU CSV
     if final_df is not None and not final_df.empty:
         final_df = final_df.sort_values(by='order_purchase_timestamp')
         os.makedirs(LIVE_DATA_DIR, exist_ok=True)
         final_df.to_csv(OUTPUT_FILE, index=False)
-        print(f"✅ Đã chốt sổ dữ liệu tính đến {today.strftime('%Y-%m-%d')}")
-        print(f"📊 Tổng số dòng: {len(final_df)}")
+        print(f"✅ Đã lưu dữ liệu. Tổng dòng: {len(final_df)}")
+        
+        # --- QUAN TRỌNG: CẬP NHẬT NGÀY CHO LẦN SAU ---
+        # Cộng thêm 1 ngày
+        next_day = current_sim_date + timedelta(days=1)
+        
+        # Ghi lại vào file text
+        with open(STATE_FILE, 'w') as f:
+            f.write(next_day.strftime('%Y-%m-%d'))
+            
+        print(f"🔄 Đã cập nhật trạng thái mới: {next_day.strftime('%Y-%m-%d')}")
+        print("👉 Lần chạy tới của GitHub Action sẽ xử lý ngày này.")
+        
     else:
-        print("⚠️ Không có dữ liệu nào trong khoảng thời gian này.")
+        print("⚠️ Không có dữ liệu.")
 
 if __name__ == "__main__":
     main()

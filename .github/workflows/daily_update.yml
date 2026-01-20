@@ -53,8 +53,8 @@ jobs:
       run: python etl_pipeline/daily_replay.py
 
     # --- BƯỚC NÀY NẾU BẠN MUỐN CHẠY TRAIN MODEL TỰ ĐỘNG THÌ BỎ COMMENT RA ---
-    # - name: Train AI Model
-    #   run: python notebooks/train_pipeline.py
+    - name: Train AI Model
+      run: python notebooks/train_pipeline.py
     # ------------------------------------------------------------------------
 
     # 6. Lưu kết quả mới vào Git (Commit & Push)

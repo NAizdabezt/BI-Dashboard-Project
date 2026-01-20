@@ -1,0 +1,5 @@
+OrderID,OrderDate,Revenue,freight_value,Status,seller_id,customer_unique_id,customer_city,customer_state,Category_VN,product_id
+157ec3dc3f38cdbd2706bd216edfe8fb,2026-01-20 13:43:16,159.99,15.29,delivered,46dc3b2cc0980fb8ec44634e21d2718e,48368b31672665cca1b8a03047a1702a,santa luzia,MG,Đồ chơi,27066995b777fb84dbcb25961fd6d007
+1b3d11cf9f92c0f7baf627ab059621f8,2026-01-20 23:31:23,636.0,30.71,delivered,e24fc9fcd865784fb25705606fe3dfe7,318b69202a96429368680f215843340d,natal,RN,Sức khỏe & Làm đẹp,b68cf84ede4fd1e14b1740de5b727d55
+bf44408de1d05eef70fb026ba64a90ea,2026-01-20 21:30:38,10.49,10.96,delivered,b76dba6c951ab00dc4edf0a1aa88037e,7122b4f327033b35961170342401066c,valinhos,SP,Khác,1a2d84c11fbc7b3d7c0a10206c085ce5
+e6db6e9529fecbe14cd05dd349816656,2026-01-20 21:27:49,109.9,14.94,delivered,b2ba3715d723d245138f291a6fe42594,c9517b423493063fa4e805acf2cc4564,lagoa santa,MG,Game & Console,06ead9c0b05b368667d858c09148af03

@@ -57,19 +57,13 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        git add data/live/
+        # SỬA DÒNG NÀY: Add tất cả thay đổi (CSV mới + File ngày mới)
+        git add .
         
-        # Kiểm tra xem có gì thay đổi không
         if git diff --staged --quiet; then
-          echo "⚠️ Không có dữ liệu mới để commit."
+          echo "⚠️ Không có gì thay đổi."
         else
-          git commit -m "Auto-update: Cập nhật dữ liệu ngày $(date +'%Y-%m-%d')"
-          
-          # --- ĐOẠN QUAN TRỌNG NHẤT ĐÂY ---
-          # Kéo code mới nhất về trước khi đẩy
-          git pull origin main --rebase
-          # ---------------------------------
-          
+          git commit -m "Auto-update: Dữ liệu ngày $(cat simulation_state.txt)"
+          git pull --rebase origin main
           git push origin main
-          echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
         fi

@@ -88,11 +88,12 @@ _Hệ thống sẽ tải dữ liệu, xử lý và lưu kết quả vào data/li
 ## 👥 Thành viên nhóm (Team Members)
 | Họ và Tên | Vai Trò |
 |------------|----------|
-| **Nguyễn Thị Hồng Thắm** | Trưởng nhóm | 
+| **Từ Nhật Anh** | Trưởng nhóm | 
 | **Hồ Thị Thanh Thảo** | Thành viên | 
-| **Từ Nhật Anh** | Thành viên |
-| **Nguyễn Quang Hiệp** | Thành viên |
-| **Bạn chưa biết họ tên** | Thành viên |
+| **Nguyễn Thị Hồng Thắm** | Thành viên |
+| **Nguyễn Trương Hiệp** | Thành viên |
+| **Trần Thanh Thảo** | Thành viên |
+
 
 ## 🙏 Lời cảm ơn (Acknowledgments)
 * Dữ liệu được cung cấp bởi Olist (Brazilian E-Commerce Public Dataset by Olist).

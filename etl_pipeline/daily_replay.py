@@ -8,72 +8,76 @@ RAW_DATA_DIR = 'data/raw'
 LIVE_DATA_DIR = 'data/live'
 OUTPUT_FILE = os.path.join(LIVE_DATA_DIR, 'sales_dashboard.csv')
 
-def main():
-    # 1. Xác định ngày giả lập (Hôm nay)
-    today = datetime.now()
-    print(f"🚀 Bắt đầu chạy ETL Pipeline...")
-    print(f"📅 Ngày hệ thống: {today.strftime('%Y-%m-%d')}")
+# --- CẤU HÌNH CỖ MÁY THỜI GIAN ---
+# Bạn muốn giả lập hôm nay là ngày nào?
+# Ví dụ: Ngày 1 tháng 6 năm 2018 (Để dành 6 tháng cuối năm để test AI)
+CURRENT_SIMULATION_DATE = datetime(2018, 6, 1) 
 
-    # 2. Lấy dữ liệu sạch từ Raw (Đã qua xử lý process_utils)
-    # Lưu ý: Hàm này đang trả về toàn bộ dữ liệu có trong file Raw
+def main():
+    # 1. Sử dụng ngày giả lập thay vì ngày thực tế
+    today = CURRENT_SIMULATION_DATE
+    
+    print(f"🚀 Bắt đầu chạy ETL Pipeline...")
+    print(f"⏳ Đang du hành thời gian về ngày: {today.strftime('%Y-%m-%d')}")
+
+    # 2. Lấy dữ liệu sạch từ Raw
     full_clean_data = load_and_merge_data(RAW_DATA_DIR)
     
     if full_clean_data is None:
         print("❌ Không đọc được dữ liệu nguồn. Dừng chương trình.")
         return
 
-    # Đảm bảo cột thời gian là datetime để so sánh
+    # Đảm bảo cột thời gian là datetime
     full_clean_data['order_purchase_timestamp'] = pd.to_datetime(full_clean_data['order_purchase_timestamp'])
 
     # 3. KIỂM TRA: File kết quả đã tồn tại chưa?
+    # Lưu ý: Nếu ngày giả lập < ngày trong file cũ, ta bắt buộc phải chạy lại từ đầu (Reset)
+    # để tránh dữ liệu tương lai bị lẫn vào quá khứ.
+    
     is_first_run = not os.path.exists(OUTPUT_FILE)
+    
+    # Kiểm tra thêm logic: Nếu file cũ đang chứa dữ liệu năm 2026 mà giờ set về 2018
+    # thì phải xóa làm lại, nếu không sẽ bị loạn thời gian.
+    if not is_first_run:
+        existing_df = pd.read_csv(OUTPUT_FILE)
+        max_date_in_file = pd.to_datetime(existing_df['OrderDate']).max() # Lưu ý tên cột đã đổi trong process_utils
+        
+        if max_date_in_file > today:
+            print("⚠️ Phát hiện dữ liệu tương lai trong file cũ! Đang tiến hành Reset về quá khứ...")
+            is_first_run = True # Ép chạy lại mode Full Load
 
     final_df = None
 
     if is_first_run:
-        # --- TRƯỜNG HỢP 1: CHẠY LẦN ĐẦU (Hoặc file bị xóa) ---
-        print("✨ Chưa thấy file dữ liệu cũ. Chế độ: FULL LOAD (Chạy lại toàn bộ lịch sử).")
+        # --- MODE 1: TIME TRAVEL RESET (Chạy lại từ đầu đến mốc 6/2018) ---
+        print(f"✨ Tạo mới dữ liệu lịch sử từ đầu đến {today.strftime('%Y-%m-%d')}.")
         
-        # Lấy tất cả dữ liệu từ quá khứ <= Hôm nay
         final_df = full_clean_data[full_clean_data['order_purchase_timestamp'] <= today]
         
     else:
-        # --- TRƯỜNG HỢP 2: ĐÃ CÓ DỮ LIỆU (Chạy hàng ngày) ---
-        print("📂 Đã thấy file dữ liệu cũ. Chế độ: INCREMENTAL LOAD (Cập nhật ngày hôm nay).")
+        # --- MODE 2: INCREMENTAL (Dành cho việc chạy tiếp các ngày sau 1/6/2018) ---
+        print("📂 Cập nhật dữ liệu mới (Incremental Load).")
         
-        # B1: Đọc file cũ lên
         current_df = pd.read_csv(OUTPUT_FILE)
-        current_df['order_purchase_timestamp'] = pd.to_datetime(current_df['order_purchase_timestamp'])
+        current_df['order_purchase_timestamp'] = pd.to_datetime(current_df['order_purchase_timestamp']) # Lưu ý tên cột gốc
         
-        print(f"   - Dữ liệu cũ đang có: {len(current_df)} dòng.")
-
-        # B2: Lấy dữ liệu CỦA RIÊNG HÔM NAY (hoặc dữ liệu mới chưa có)
-        # Để an toàn, ta lấy dữ liệu <= hôm nay, sau đó dùng kỹ thuật "Upsert" (Ghi đè cái mới)
+        # Lấy dữ liệu <= ngày giả lập
         new_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= today]
 
-        # B3: Gộp cũ và mới
         combined_df = pd.concat([current_df, new_data])
-
-        # B4: XỬ LÝ TRÙNG LẶP (Quan trọng!)
-        # Nếu 1 đơn hàng xuất hiện cả ở file cũ và file mới -> Giữ cái mới nhất (keep='last')
-        # Key để xác định trùng là: order_id và product_id
-        final_df = combined_df.drop_duplicates(subset=['order_id', 'product_id'], keep='last')
         
-        new_rows_count = len(final_df) - len(current_df)
-        print(f"   - Tìm thấy {new_rows_count} dòng dữ liệu mới/cập nhật.")
+        # Lọc trùng
+        final_df = combined_df.drop_duplicates(subset=['order_id', 'product_id'], keep='last')
 
     # 4. Lưu kết quả
     if final_df is not None and not final_df.empty:
-        # Sắp xếp lại theo thời gian cho đẹp
         final_df = final_df.sort_values(by='order_purchase_timestamp')
-        
-        # Tạo thư mục nếu chưa có
         os.makedirs(LIVE_DATA_DIR, exist_ok=True)
-        
         final_df.to_csv(OUTPUT_FILE, index=False)
-        print(f"✅ Đã lưu thành công {len(final_df)} dòng vào {OUTPUT_FILE}")
+        print(f"✅ Đã chốt sổ dữ liệu tính đến {today.strftime('%Y-%m-%d')}")
+        print(f"📊 Tổng số dòng: {len(final_df)}")
     else:
-        print("⚠️ Không có dữ liệu nào để lưu.")
+        print("⚠️ Không có dữ liệu nào trong khoảng thời gian này.")
 
 if __name__ == "__main__":
     main()

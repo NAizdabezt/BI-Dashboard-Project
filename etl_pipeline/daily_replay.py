@@ -2,7 +2,7 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 from process_utils import load_and_merge_data
-# from rfm_utils import calculate_rfm  <-- Nhắc team Data viết file này nhé!
+from rfm_utils import calculate_rfm 
 
 RAW_DATA_DIR = 'data/raw'
 LIVE_DATA_DIR = 'data/live'
@@ -64,8 +64,8 @@ def main():
         current_cumulative_data = pd.read_csv(OUTPUT_DASHBOARD)
 
     # 5. CẬP NHẬT RFM CHO MÔ HÌNH AI (ĐỪNG QUÊN BƯỚC NÀY)
-    # df_rfm = calculate_rfm(current_cumulative_data, end_of_day)
-    # df_rfm.to_csv(OUTPUT_RFM, index=False)
+    df_rfm = calculate_rfm(current_cumulative_data, end_of_day)
+    df_rfm.to_csv(OUTPUT_RFM, index=False)
     print("🤖 Đã sẵn sàng cập nhật file RFM cho AI (Chờ ghép hàm).")
 
     # 6. CẬP NHẬT NGÀY CHO LẦN CHẠY TIẾP THEO

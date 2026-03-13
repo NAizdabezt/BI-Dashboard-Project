@@ -31,6 +31,9 @@ data/raw/
 .DS_Store
 .env
 
+# Notebook
+*.ipynb_checkpoints/
+
 # Data (Tùy chọn)
 # Nếu file raw quá nặng (>100MB) thì bỏ comment dòng dưới để không up lên
 # data/raw/*.csv

@@ -1,4 +1,3 @@
-# backend/main.py
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -12,9 +11,9 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BI Dashboard API")
+app = FastAPI(title="BI Dashboard API (Olist)")
 
-# 1. Cấu hình CORS
+# 1. Cấu hình CORS (Cho phép Next.js localhost:3000 gọi API)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -31,57 +30,65 @@ class RevenueItem(BaseModel):
 class SummaryData(BaseModel):
     total_revenue: float
     total_orders: int
-    growth_rate: float # % so với tháng trước
+    growth_rate: float
 
 class PredictionItem(BaseModel):
     date: str
     predicted_revenue: float
 
-# --- LOAD DỮ LIỆU ---
+# --- CẤU HÌNH ĐƯỜNG DẪN & GLOBAL CACHE ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
 csv_path = os.path.join(project_root, 'data', 'live', 'sales_dashboard.csv')
 model_path = os.path.join(project_root, 'models', 'sales_forecast_model.pkl')
 
-def load_data():
+# CACHE: Lưu trữ dataframe để không phải đọc lại CSV mỗi lần user refresh trang
+CACHED_DF = None
+LAST_MODIFIED_TIME = 0
+
+def get_data():
+    """Hàm lấy dữ liệu thông minh, có sử dụng Cache"""
+    global CACHED_DF, LAST_MODIFIED_TIME
+    
     if not os.path.exists(csv_path):
         logger.warning(f"CSV file not found: {csv_path}")
         return pd.DataFrame()
-    try:
-        df = pd.read_csv(csv_path)
-        df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
-        logger.info(f"Loaded {len(df)} rows from CSV")
-        return df
-    except Exception as e:
-        logger.error(f"Error loading CSV: {e}")
-        return pd.DataFrame()
+
+    # Kiểm tra xem file CSV có bị thay đổi (bởi luồng ETL) không
+    current_modified_time = os.path.getmtime(csv_path)
+    
+    if CACHED_DF is None or current_modified_time > LAST_MODIFIED_TIME:
+        logger.info("🔄 Đang Load/Reload dữ liệu CSV mới vào Cache...")
+        try:
+            df = pd.read_csv(csv_path)
+            df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+            CACHED_DF = df
+            LAST_MODIFIED_TIME = current_modified_time
+        except Exception as e:
+            logger.error(f"Error loading CSV: {e}")
+            return pd.DataFrame()
+            
+    return CACHED_DF
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("=== BI Dashboard API Starting ===")
-    if os.path.exists(csv_path):
-        logger.info(f"✅ CSV found: {csv_path}")
-    else:
-        logger.warning(f"⚠️ CSV not found: {csv_path}")
-    if os.path.exists(model_path):
-        logger.info(f"✅ Model found: {model_path}")
-    else:
-        logger.warning(f"⚠️ Model not found: {model_path}")
+    logger.info("=== Bắt đầu khởi động Server Backend ===")
+    get_data() # Gọi mồi 1 lần để nhét data vào Cache
 
 # -----------------------------
 
 @app.get("/")
 def read_root():
-    return {"message": "Olist BI Dashboard API is running"}
+    return {"message": "Olist BI Dashboard API is running mượt mà!"}
 
 @app.get("/api/revenue/daily", response_model=List[RevenueItem])
 def get_daily_revenue():
-    df = load_data()
+    df = get_data()
     if df.empty:
         return []
     
-    # Gom nhóm theo ngày và làm tròn
-    daily_data = df.groupby(df['order_purchase_timestamp'].dt.date)['price'].sum().reset_index()
+    # Đã sửa: Tính tổng theo payment_value thay vì price
+    daily_data = df.groupby(df['order_purchase_timestamp'].dt.date)['payment_value'].sum().reset_index()
     daily_data.columns = ['date', 'revenue']
     daily_data['date'] = daily_data['date'].astype(str)
     daily_data['revenue'] = daily_data['revenue'].round(2)
@@ -90,16 +97,17 @@ def get_daily_revenue():
 
 @app.get("/api/summary", response_model=SummaryData)
 def get_summary():
-    df = load_data()
+    df = get_data()
     if df.empty:
         return {"total_revenue": 0, "total_orders": 0, "growth_rate": 0}
 
-    total_revenue = df['price'].sum().round(2)
+    # Đã sửa: Tính tổng theo payment_value
+    total_revenue = df['payment_value'].sum().round(2)
     total_orders = int(df['order_id'].nunique())
 
-    # Tính Growth Rate (tháng hiện tại vs tháng trước)
+    # Tính Growth Rate
     df['month'] = df['order_purchase_timestamp'].dt.to_period('M')
-    monthly_rev = df.groupby('month')['price'].sum()
+    monthly_rev = df.groupby('month')['payment_value'].sum()
     
     growth_rate = 0.0
     if len(monthly_rev) >= 2:
@@ -114,49 +122,38 @@ def get_summary():
         "growth_rate": growth_rate
     }
 
-@app.post("/api/predict", response_model=List[PredictionItem])
+@app.get("/api/predict", response_model=List[PredictionItem])
 def predict_revenue(days: int = 30):
-    # Validate input: chỉ cho phép 7, 14, 30
+    # ĐỔI THÀNH PHƯƠNG THỨC GET (Vì người dùng chỉ Yêu cầu xem, không Gửi data lên)
     if days not in [7, 14, 30]:
-        logger.warning(f"Invalid days parameter: {days}")
-        raise HTTPException(status_code=400, detail="days must be 7, 14, or 30")
+        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
     
-    # Check model file exists
     if not os.path.exists(model_path):
-        logger.error(f"Model file not found: {model_path}")
-        raise HTTPException(status_code=500, detail="Model file not found")
+        raise HTTPException(status_code=500, detail="Chưa train mô hình AI. Thiếu file pkl.")
     
-    # Load model
     try:
         model = joblib.load(model_path)
-        logger.info(f"Model loaded successfully")
     except Exception as e:
-        logger.error(f"Error loading model: {e}")
-        raise HTTPException(status_code=500, detail=f"Could not load model: {e}")
+        raise HTTPException(status_code=500, detail=f"Lỗi load model: {e}")
     
-    # Lấy ngày cuối cùng từ dữ liệu
-    df = load_data()
+    df = get_data()
     if df.empty:
-        logger.error("No data available for prediction")
-        raise HTTPException(status_code=500, detail="No data available")
+        raise HTTPException(status_code=500, detail="Chưa có dữ liệu CSV")
     
     last_date = df['order_purchase_timestamp'].max()
-    logger.info(f"Predicting {days} days from {last_date.strftime('%Y-%m-%d')}")
     
-    # Tạo các ngày tương lai và date_ordinal tương ứng
     predictions = []
     for i in range(1, days + 1):
         future_date = last_date + pd.Timedelta(days=i)
         date_ordinal = future_date.toordinal()
         
-        # Predict
         pred_value = model.predict([[date_ordinal]])[0]
         
         predictions.append({
             "date": future_date.strftime("%Y-%m-%d"),
-            "predicted_revenue": round(float(pred_value), 2)
+            "predicted_revenue": max(0, round(float(pred_value), 2)) # Chặn doanh thu âm
         })
     
     return predictions
 
-# Chạy server: uvicorn main.main:app --reload (từ thư mục gốc)
+# Lệnh chạy: uvicorn backend.main:app --reload

@@ -291,7 +291,7 @@ def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: 
 
 @app.get("/api/customers/rfm", response_model=List[RFMSegmentItem])
 def get_rfm_segments():
-    """API: Phân tích và Phân loại Khách hàng theo mô hình RFM"""
+    """API: Đọc Phân khúc RFM đã được tính toán sẵn từ Pipeline"""
     rfm_path = os.path.join(project_root, 'data', 'live', 'customer_rfm.csv')
     
     if not os.path.exists(rfm_path):
@@ -300,50 +300,27 @@ def get_rfm_segments():
     # Đọc file CSV
     df_rfm = pd.read_csv(rfm_path)
     
-    # Chuẩn hóa tên cột thành chữ thường (customer_unique_id, recency, frequency, monetary)
+    # Chuẩn hóa tên cột thành chữ thường (Segment -> segment)
     df_rfm.columns = [col.lower() for col in df_rfm.columns]
     
-    # ==========================================================
-    # LÕI PHÂN TÍCH: TỰ ĐỘNG DÁN NHÃN KHÁCH HÀNG (SEGMENTATION)
-    # ==========================================================
-    def classify_customer(row):
-        r = row['recency']
-        f = row['frequency']
-        
-        # Nhóm 1: Khách hàng mua nhiều lần (Tần suất > 1)
-        if f > 1:
-            if r <= 90: return "1. Khách VIP (Mua nhiều, Vừa mua)"
-            else: return "2. Khách Trung Thành (Đã lâu chưa mua)"
-            
-        # Nhóm 2: Khách mua 1 lần (Đặc sản của E-commerce)
-        else:
-            if r <= 30: return "3. Khách Mới (Dưới 30 ngày)"
-            elif r <= 90: return "4. Tiềm Năng (30 - 90 ngày)"
-            elif r <= 180: return "5. Nguy Cơ Rời Bỏ (90 - 180 ngày)"
-            else: return "6. Ngủ Đông (Trên 180 ngày)"
+    if 'segment' not in df_rfm.columns:
+        return []
 
-    # Áp dụng hàm phân loại cho toàn bộ dữ liệu (Chỉ mất ~0.1 giây)
-    df_rfm['segment'] = df_rfm.apply(classify_customer, axis=1)
-
-    # ==========================================================
-    # TỔNG HỢP VÀ ĐÓNG GÓI RA JSON
-    # ==========================================================
+    # API siêu nhẹ: Chỉ Groupby và tính toán tổng hợp
     rfm_summary = df_rfm.groupby('segment').agg({
-        'customer_unique_id': 'count',   # Số lượng người
-        'monetary': 'sum',               # Doanh thu mang lại
-        'recency': 'mean'                # Số ngày vắng mặt trung bình
+        'customer_unique_id': 'count',
+        'monetary': 'sum',
+        'recency': 'mean'
     }).reset_index()
     
-    # Đổi tên và làm tròn
     rfm_summary.columns = ['segment', 'customer_count', 'total_revenue', 'avg_recency']
     rfm_summary['total_revenue'] = rfm_summary['total_revenue'].round(2)
     rfm_summary['avg_recency'] = rfm_summary['avg_recency'].round(0)
     
-    # Sắp xếp theo tên Phân khúc (Nhờ đánh số 1,2,3... nên nó sẽ hiển thị rất đẹp)
     rfm_summary = rfm_summary.sort_values(by='segment')
     
     return rfm_summary.to_dict(orient='records')
-    
+
 @app.get("/api/predict", response_model=List[PredictionItem])
 def predict_revenue(days: int = 30, history_days: int = 30):
     """Giữ nguyên logic của AI Prophet"""

@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
+import json
 import pandas as pd
 import os
 import joblib
@@ -362,8 +363,17 @@ def predict_revenue(days: int = 30, history_days: int = 30):
 @app.get("/api/predict/metrics")
 def get_model_metrics():
     """API trả về độ chính xác mô hình"""
+    # Dùng đường dẫn tuyệt đối cho chắc ăn 100%
+    metrics_path = os.path.join(project_root, 'models', 'metrics.json')
+    
+    if not os.path.exists(metrics_path):
+        return {"mae": 0, "mape": 0, "rmse": 0, "status": "File chưa tồn tại"}
+        
     try:
-        with open('models/metrics.json', 'r') as f:
-            return json.load(f)
-    except:
-        return {"mae": 0, "mape": 0, "rmse": 0}
+        with open(metrics_path, 'r') as f:
+            data = json.load(f)
+            return data
+    except Exception as e:
+        # In lỗi thật ra Terminal để mình còn biết mà sửa
+        print(f"❌ Lỗi khi đọc file metrics: {e}") 
+        return {"mae": 0, "mape": 0, "rmse": 0, "status": f"Lỗi: {e}"}

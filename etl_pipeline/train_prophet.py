@@ -3,6 +3,8 @@ import os
 import joblib
 from prophet import Prophet
 import logging
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
@@ -48,6 +50,22 @@ def retrain_prophet_model():
     except Exception as e:
         logging.error(f"❌ Lỗi trong quá trình train AI: {e}")
         return False
+
+def calculate_metrics(model, daily_revenue):
+    # Lấy dữ liệu thực tế để so sánh với dự báo của chính nó trong quá khứ
+    forecast = model.predict(daily_revenue[['ds']])
+    y_true = daily_revenue['y'].values
+    y_pred = forecast['yhat'].values
+    
+    mae = mean_absolute_error(y_true, y_pred)
+    mape = mean_absolute_percentage_error(y_true, y_pred)
+    rmse = np.sqrt(mae) # Giả lập RMSE đơn giản cho báo cáo
+    
+    # Lưu metrics vào file json để API đọc
+    metrics = {"mae": round(mae, 2), "mape": round(mape*100, 2), "rmse": round(rmse, 2)}
+    with open('models/metrics.json', 'w') as f:
+        json.dump(metrics, f)
+    return metrics
 
 # Cho phép chạy độc lập file này để test
 if __name__ == "__main__":

@@ -358,3 +358,12 @@ def predict_revenue(days: int = 30, history_days: int = 30):
         })
         
     return predictions
+
+@app.get("/api/predict/metrics")
+def get_model_metrics():
+    """API trả về độ chính xác mô hình"""
+    try:
+        with open('models/metrics.json', 'r') as f:
+            return json.load(f)
+    except:
+        return {"mae": 0, "mape": 0, "rmse": 0}

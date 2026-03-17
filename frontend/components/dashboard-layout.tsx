@@ -5,7 +5,6 @@ import { Header } from "@/components/header"
 import {
   SidebarInset,
   SidebarProvider,
-  SidebarTrigger,
 } from "@/components/ui/sidebar"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {

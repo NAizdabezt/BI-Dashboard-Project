@@ -32,7 +32,7 @@ export function RevenueChart() {
     const fetchHistorical = async () => {
       setLoading(true)
       try {
-        const response = await fetch("http://localhost:8000/api/historical")
+        const response = await fetch("http://localhost:8000/api/revenue/daily")
         if (!response.ok) throw new Error("Failed to fetch historical data")
         const historical: HistoricalData[] = await response.json()
         setChartData(historical)

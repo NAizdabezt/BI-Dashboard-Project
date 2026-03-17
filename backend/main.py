@@ -31,7 +31,8 @@ class RevenueItem(BaseModel):
 class SummaryData(BaseModel):
     total_revenue: float
     total_orders: int
-    growth_rate: float # % so với tháng trước
+    growth_rate: float
+    aov: float = 0.0
 
 class PredictionItem(BaseModel):
     date: str
@@ -92,10 +93,11 @@ def get_daily_revenue():
 def get_summary():
     df = load_data()
     if df.empty:
-        return {"total_revenue": 0, "total_orders": 0, "growth_rate": 0}
+        return {"total_revenue": 0, "total_orders": 0, "growth_rate": 0, "aov": 0}
 
     total_revenue = df['price'].sum().round(2)
     total_orders = int(df['order_id'].nunique())
+    aov = float((total_revenue / total_orders).round(2)) if total_orders > 0 else 0.0
 
     # Tính Growth Rate (tháng hiện tại vs tháng trước)
     df['month'] = df['order_purchase_timestamp'].dt.to_period('M')
@@ -111,7 +113,8 @@ def get_summary():
     return {
         "total_revenue": float(total_revenue),
         "total_orders": total_orders,
-        "growth_rate": growth_rate
+        "growth_rate": growth_rate,
+        "aov": aov
     }
 
 @app.post("/api/predict", response_model=List[PredictionItem])

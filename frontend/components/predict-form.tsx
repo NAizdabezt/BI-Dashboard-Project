@@ -8,11 +8,12 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "rec
 
 interface PredictionData {
   date: string
-  predictedRevenue: number
+  actual_revenue: number | null
+  predicted_revenue: number
 }
 
 export function PredictForm() {
-  const [days, setDays] = useState("")
+  const [days, setDays] = useState("30")
   const [prediction, setPrediction] = useState<PredictionData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,13 +24,14 @@ export function PredictForm() {
     setError(null)
 
     try {
-      const response = await fetch("http://localhost:8000/api/predict", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ days: parseInt(days) }),
-      })
+      const daysNum = parseInt(days)
+      if (![7, 14, 30].includes(daysNum)) {
+        setError("Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
+        setLoading(false)
+        return
+      }
+
+      const response = await fetch(`http://localhost:8000/api/predict?days=${daysNum}`)
 
       if (!response.ok) throw new Error("Failed to get prediction")
 
@@ -53,14 +55,15 @@ export function PredictForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              type="number"
-              placeholder="Số ngày (vd: 30)"
+            <select
               value={days}
               onChange={(e) => setDays(e.target.value)}
-              min="1"
-              required
-            />
+              className="border rounded px-3 py-2"
+            >
+              <option value="7">7 ngày</option>
+              <option value="14">14 ngày</option>
+              <option value="30">30 ngày</option>
+            </select>
             <Button type="submit" disabled={loading}>
               {loading ? "Đang dự báo..." : "Dự báo"}
             </Button>
@@ -126,7 +129,7 @@ export function PredictForm() {
                   />
                   <Line
                     type="monotone"
-                    dataKey="predictedRevenue"
+                    dataKey="predicted_revenue"
                     stroke="#ff7300"
                     strokeDasharray="5 5"
                     strokeWidth={2}

@@ -2,89 +2,83 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 from process_utils import load_and_merge_data
+from rfm_utils import calculate_rfm 
+from train_prophet import retrain_prophet_model
 
-# Cấu hình đường dẫn
 RAW_DATA_DIR = 'data/raw'
 LIVE_DATA_DIR = 'data/live'
-OUTPUT_FILE = os.path.join(LIVE_DATA_DIR, 'sales_dashboard.csv')
-STATE_FILE = 'simulation_state.txt' # File lưu ngày hiện tại
+OUTPUT_DASHBOARD = os.path.join(LIVE_DATA_DIR, 'sales_dashboard.csv')
+OUTPUT_RFM = os.path.join(LIVE_DATA_DIR, 'customer_rfm.csv')
+STATE_FILE = 'simulation_state.txt'
 
 def main():
-    # 1. ĐỌC NGÀY GIẢ LẬP TỪ FILE
     if not os.path.exists(STATE_FILE):
-        print(f"❌ Không tìm thấy file {STATE_FILE}. Hãy tạo file này và điền ngày bắt đầu (VD: 2018-06-01).")
+        print("❌ Thiếu file STATE_FILE.")
         return
 
     with open(STATE_FILE, 'r') as f:
-        date_str = f.read().strip()
-        
-    try:
-        current_sim_date = datetime.strptime(date_str, '%Y-%m-%d')
-    except ValueError:
-        print("❌ Định dạng ngày trong file text bị sai. Hãy dùng YYYY-MM-DD.")
-        return
+        current_sim_date = datetime.strptime(f.read().strip(), '%Y-%m-%d')
 
-    print(f"🚀 Bắt đầu chạy ETL Pipeline...")
-    print(f"⏳ Hệ thống đang xử lý dữ liệu ngày: {current_sim_date.strftime('%Y-%m-%d')}")
+    print(f"🚀 Xử lý dữ liệu cho ngày: {current_sim_date.strftime('%Y-%m-%d')}")
 
-    # 2. Lấy dữ liệu sạch
+    # 1. Load TOÀN BỘ dữ liệu sạch từ hàm của bạn
     full_clean_data = load_and_merge_data(RAW_DATA_DIR)
-    
-    if full_clean_data is None:
+    if full_clean_data is None or full_clean_data.empty:
         return
 
+    # Đảm bảo cột ngày đúng định dạng Datetime
     full_clean_data['order_purchase_timestamp'] = pd.to_datetime(full_clean_data['order_purchase_timestamp'])
 
-    # 3. LOGIC CẬP NHẬT DỮ LIỆU
-    is_first_run = not os.path.exists(OUTPUT_FILE)
+    # 2. KIỂM TRA ĐIỀU KIỆN DỪNG (Rất quan trọng)
+    max_date_in_raw = full_clean_data['order_purchase_timestamp'].max()
+    if current_sim_date > max_date_in_raw:
+        print("✅ Đã chạy hết dữ liệu lịch sử Olist. Dừng Pipeline để không tạo rác.")
+        return
+
+    # 3. LỌC DỮ LIỆU ĐÚNG 1 NGÀY HIỆN TẠI (True Incremental)
+    start_of_day = current_sim_date
+    end_of_day = current_sim_date + timedelta(days=1) - timedelta(seconds=1)
     
-    # Kiểm tra nếu file cũ chứa dữ liệu tương lai (do reset ngày) -> Xóa làm lại
-    if not is_first_run:
-        existing_df = pd.read_csv(OUTPUT_FILE)
-        # Kiểm tra cột ngày (Lưu ý tên cột trong process_utils của bạn là 'OrderDate' hay 'order_purchase_timestamp'?)
-        # Ở đây tôi dùng tên cột gốc như bạn đã chốt ở bước trước:
-        if 'order_purchase_timestamp' in existing_df.columns:
-            max_date = pd.to_datetime(existing_df['order_purchase_timestamp']).max()
-            if max_date > current_sim_date:
-                print("⚠️ Phát hiện dữ liệu tương lai. Reset lại từ đầu.")
-                is_first_run = True
+    mask = (full_clean_data['order_purchase_timestamp'] >= start_of_day) & \
+           (full_clean_data['order_purchase_timestamp'] <= end_of_day)
+    new_daily_data = full_clean_data[mask]
 
-    final_df = None
+    os.makedirs(LIVE_DATA_DIR, exist_ok=True)
 
-    if is_first_run:
-        print(f"✨ [FULL LOAD] Tạo dữ liệu từ đầu đến {current_sim_date.strftime('%Y-%m-%d')}")
-        final_df = full_clean_data[full_clean_data['order_purchase_timestamp'] <= current_sim_date]
+    # 4. GHI DỮ LIỆU VÀO FILE (Tránh phình to Git)
+    if not os.path.exists(OUTPUT_DASHBOARD):
+        # Chạy lần đầu: Lấy tất cả data từ đầu đến hết ngày hiện tại
+        print("✨ Khởi tạo file lần đầu...")
+        initial_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= end_of_day]
+        initial_data.to_csv(OUTPUT_DASHBOARD, index=False)
+        current_cumulative_data = initial_data # Lưu tạm để lát tính RFM
     else:
-        print("📂 [INCREMENTAL] Cập nhật thêm dữ liệu mới.")
-        current_df = pd.read_csv(OUTPUT_FILE)
-        current_df['order_purchase_timestamp'] = pd.to_datetime(current_df['order_purchase_timestamp'])
+        # Chạy các ngày sau: CHỈ NỐI (Append) các dòng mới sinh ra trong hôm nay
+        if not new_daily_data.empty:
+            print(f"📂 Nối thêm {len(new_daily_data)} dòng giao dịch mới.")
+            # mode='a' là Append, header=False để không in lại tiêu đề cột
+            new_daily_data.to_csv(OUTPUT_DASHBOARD, mode='a', header=False, index=False)
+        else:
+            print("⚠️ Hôm nay không có giao dịch mới nào.")
         
-        # Lấy dữ liệu <= ngày giả lập hiện tại
-        new_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= current_sim_date]
-        
-        combined_df = pd.concat([current_df, new_data])
-        final_df = combined_df.drop_duplicates(subset=['order_id', 'product_id'], keep='last')
+        # Load lại file CSV hiện tại để tính RFM cho AI
+        current_cumulative_data = pd.read_csv(OUTPUT_DASHBOARD)
 
-    # 4. LƯU DỮ LIỆU CSV
-    if final_df is not None and not final_df.empty:
-        final_df = final_df.sort_values(by='order_purchase_timestamp')
-        os.makedirs(LIVE_DATA_DIR, exist_ok=True)
-        final_df.to_csv(OUTPUT_FILE, index=False)
-        print(f"✅ Đã lưu dữ liệu. Tổng dòng: {len(final_df)}")
+    # 5. CẬP NHẬT RFM CHO MÔ HÌNH AI (ĐỪNG QUÊN BƯỚC NÀY)
+    df_rfm = calculate_rfm(current_cumulative_data, end_of_day)
+    df_rfm.to_csv(OUTPUT_RFM, index=False)
+    print("🤖 Đã sẵn sàng cập nhật file RFM cho AI (Chờ ghép hàm).")
+
+    # 6. RETRAIN LẠI MÔ HÌNH DỰ BÁO DOANH THU 
+    print("⏳ Đang gọi AI Prophet đi học lại dữ liệu ngày hôm nay...")
+    retrain_prophet_model()
+
+    # 7. CẬP NHẬT NGÀY CHO LẦN CHẠY TIẾP THEO
+    next_day = current_sim_date + timedelta(days=1)
+    with open(STATE_FILE, 'w') as f:
+        f.write(next_day.strftime('%Y-%m-%d'))
         
-        # --- QUAN TRỌNG: CẬP NHẬT NGÀY CHO LẦN SAU ---
-        # Cộng thêm 1 ngày
-        next_day = current_sim_date + timedelta(days=1)
-        
-        # Ghi lại vào file text
-        with open(STATE_FILE, 'w') as f:
-            f.write(next_day.strftime('%Y-%m-%d'))
-            
-        print(f"🔄 Đã cập nhật trạng thái mới: {next_day.strftime('%Y-%m-%d')}")
-        print("👉 Lần chạy tới của GitHub Action sẽ xử lý ngày này.")
-        
-    else:
-        print("⚠️ Không có dữ liệu.")
+    print(f"🔄 Hoàn tất. Next day: {next_day.strftime('%Y-%m-%d')}")
 
 if __name__ == "__main__":
     main()

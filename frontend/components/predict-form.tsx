@@ -4,15 +4,16 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, CartesianGrid } from "recharts"
 
 interface PredictionData {
   date: string
-  predictedRevenue: number
+  actual_revenue: number | null
+  predicted_revenue: number
 }
 
 export function PredictForm() {
-  const [days, setDays] = useState("")
+  const [days, setDays] = useState("30")
   const [prediction, setPrediction] = useState<PredictionData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -23,20 +24,21 @@ export function PredictForm() {
     setError(null)
 
     try {
-      const response = await fetch("http://localhost:8000/api/predict", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ days: parseInt(days) }),
-      })
+      const daysNum = parseInt(days)
+      if (![7, 14, 30].includes(daysNum)) {
+        setError("Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
+        setLoading(false)
+        return
+      }
 
-      if (!response.ok) throw new Error("Failed to get prediction")
+      const response = await fetch(`http://localhost:8000/api/predict?days=${daysNum}`)
+
+      if (!response.ok) throw new Error("Lấy dữ liệu dự báo thất bại")
 
       const data: PredictionData[] = await response.json()
       setPrediction(data)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error")
+      setError(err instanceof Error ? err.message : "Lỗi hệ thống không xác định")
     } finally {
       setLoading(false)
     }
@@ -46,87 +48,69 @@ export function PredictForm() {
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle>Dự báo doanh thu</CardTitle>
+          <CardTitle>Dự báo doanh thu tương lai</CardTitle>
           <CardDescription>
-            Nhập số ngày cần dự báo để xem dự đoán doanh thu tương lai
+            Nhập số ngày cần dự báo (7, 14 hoặc 30) để xem AI Prophet phân tích
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex gap-2">
-            <Input
-              type="number"
-              placeholder="Số ngày (vd: 30)"
+            <select
               value={days}
               onChange={(e) => setDays(e.target.value)}
-              min="1"
-              required
-            />
+              className="border rounded px-3 py-2"
+            >
+              <option value="7">7 ngày</option>
+              <option value="14">14 ngày</option>
+              <option value="30">30 ngày</option>
+            </select>
             <Button type="submit" disabled={loading}>
-              {loading ? "Đang dự báo..." : "Dự báo"}
+              {loading ? "Đang dự báo..." : "Dự báo bằng AI"}
             </Button>
           </form>
-          {error && <p className="text-red-500 mt-2">{error}</p>}
+          {error && <p className="text-red-500 mt-2 text-sm">{error}</p>}
         </CardContent>
       </Card>
 
       {prediction.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle>Kết quả dự báo</CardTitle>
+            <CardTitle>Kết quả dự báo AI</CardTitle>
             <CardDescription>
-              Dự đoán doanh thu cho {days} ngày tới
+              So sánh doanh thu thực tế 30 ngày qua và dự đoán {days} ngày tới (Đơn vị: BRL)
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="w-full h-[300px]">
+            <div className="w-full h-[350px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={prediction}>
+                <LineChart data={prediction} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" opacity={0.3} vertical={false} />
                   <XAxis
                     dataKey="date"
                     stroke="#888888"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
+                    minTickGap={30}
                   />
                   <YAxis
                     stroke="#888888"
                     fontSize={12}
                     tickLine={false}
                     axisLine={false}
-                    tickFormatter={(value) => `$${value}`}
+                    tickFormatter={(value) => `R$${value}`}
                   />
-                  <Tooltip
-                    content={({ active, payload, label }) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <div className="rounded-lg border bg-background p-2 shadow-sm">
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="flex flex-col">
-                                <span className="text-[0.70rem] uppercase text-muted-foreground">
-                                  Ngày
-                                </span>
-                                <span className="font-bold text-muted-foreground">
-                                  {label}
-                                </span>
-                              </div>
-                              <div className="flex flex-col">
-                                <span className="text-[0.70rem] uppercase text-muted-foreground">
-                                  Dự báo doanh thu
-                                </span>
-                                <span className="font-bold">
-                                  ${payload[0].value}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        )
-                      }
-                      return null
-                    }}
+                  <Tooltip 
+                    formatter={(value: any) => [`R$ ${value}`, ""]}
+                    labelStyle={{ color: 'black', fontWeight: 'bold', marginBottom: '4px' }}
                   />
+                  <Legend verticalAlign="top" height={36}/>
+                  
+                  {/* Dây 1: Doanh thu thực tế (Màu xanh, nét liền) */}
                   <Line
+                    name="Thực tế (Quá khứ)"
                     type="monotone"
-                    dataKey="predictedRevenue"
+                    dataKey="predicted_revenue"
                     stroke="#ff7300"
                     strokeDasharray="5 5"
                     strokeWidth={2}

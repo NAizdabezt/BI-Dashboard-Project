@@ -79,8 +79,8 @@ _Hệ thống sẽ tải dữ liệu, xử lý và lưu kết quả vào data/li
   * [x] Xử lý tiếng Việt và làm sạch dữ liệu.
 * [ ] Phase 2: Data Science & AI
   * [x] Feature Engineering (Tạo biến Lag, Holiday...).
-  * [ ] EDA (Phân tích khám phá).
-  * [ ] Train các model: Linear Regression, Prophet, XGBoost.
+  * [x] EDA (Phân tích khám phá).
+  * [x] Train các model: Linear Regression, Prophet, XGBoost.
   * [ ] Đánh giá model (Evaluation).
 * [ ] Phase 3: Backend & Deployment
   * [ ] Xây dựng API với FastAPI.
@@ -89,9 +89,9 @@ _Hệ thống sẽ tải dữ liệu, xử lý và lưu kết quả vào data/li
 ## 👥 Thành viên nhóm (Team Members)
 | Họ và Tên | Vai Trò |
 |------------|----------|
-| **Từ Nhật Anh** | Trưởng nhóm | 
+| **Nguyễn Thị Hồng Thắm** | Trưởng nhóm | 
 | **Hồ Thị Thanh Thảo** | Thành viên | 
-| **Nguyễn Thị Hồng Thắm** | Thành viên |
+| **Từ Nhật Anh** | Thành viên |
 | **Nguyễn Trương Hiệp** | Thành viên |
 | **Trần Thanh Thảo** | Thành viên |
 

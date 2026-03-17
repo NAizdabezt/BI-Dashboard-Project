@@ -1,111 +1,70 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts"
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts"
 
-interface HistoricalData {
+interface RevenueData {
   date: string
   revenue: number
 }
 
-const data: HistoricalData[] = [
-  { date: "Jan", revenue: 4000 },
-  { date: "Feb", revenue: 3000 },
-  { date: "Mar", revenue: 5000 },
-  { date: "Apr", revenue: 4500 },
-  { date: "May", revenue: 6000 },
-  { date: "Jun", revenue: 5500 },
-  { date: "Jul", revenue: 7000 },
-  { date: "Aug", revenue: 6500 },
-  { date: "Sep", revenue: 8000 },
-  { date: "Oct", revenue: 7500 },
-  { date: "Nov", revenue: 9000 },
-  { date: "Dec", revenue: 8500 },
-]
-
 export function RevenueChart() {
-  const [chartData, setChartData] = useState<HistoricalData[]>(data)
-  const [loading, setLoading] = useState(false)
+  const [data, setData] = useState<RevenueData[]>([])
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchHistorical = async () => {
-      setLoading(true)
+    const fetchRevenue = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/historical")
+        const response = await fetch("http://localhost:8000/api/revenue/daily")
         if (!response.ok) throw new Error("Failed to fetch historical data")
-        const historical: HistoricalData[] = await response.json()
-        setChartData(historical)
+        const historical: RevenueData[] = await response.json()
+        setData(historical)
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error")
-        // Fallback to sample data
-        setChartData(data)
+        setError("Lỗi kết nối đến máy chủ Backend")
       } finally {
         setLoading(false)
       }
     }
 
-    fetchHistorical()
+    fetchRevenue()
   }, [])
 
-  if (loading) return <div>Loading chart...</div>
-  if (error) return <div>Error: {error}</div>
+  if (loading) {
+    return <div className="flex h-[350px] items-center justify-center text-sm text-gray-500">Đang tải dữ liệu biểu đồ...</div>
+  }
+
+  if (error) {
+    return <div className="flex h-[350px] items-center justify-center text-sm text-red-500">{error}</div>
+  }
 
   return (
-    <div className="w-full h-[300px]">
+    <div className="h-[350px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={chartData}>
+        <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
           <XAxis
             dataKey="date"
             stroke="#888888"
             fontSize={12}
             tickLine={false}
             axisLine={false}
+            minTickGap={15} 
           />
           <YAxis
             stroke="#888888"
             fontSize={12}
             tickLine={false}
             axisLine={false}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => `R$${value}`}
           />
           <Tooltip
-            content={({ active, payload, label }) => {
-              if (active && payload && payload.length) {
-                return (
-                  <div className="rounded-lg border bg-background p-2 shadow-sm">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="flex flex-col">
-                        <span className="text-[0.70rem] uppercase text-muted-foreground">
-                          Tháng
-                        </span>
-                        <span className="font-bold text-muted-foreground">
-                          {label}
-                        </span>
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[0.70rem] uppercase text-muted-foreground">
-                          Doanh thu
-                        </span>
-                        <span className="font-bold">
-                          ${payload[0].value}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                )
-              }
-              return null
-            }}
+            cursor={{ fill: 'rgba(0,0,0,0.05)' }}
+            formatter={(value: any) => [`R$ ${value}`, "Doanh thu"]}
+            labelStyle={{ color: 'black', fontWeight: 'bold', marginBottom: '4px' }}
           />
-          <Area
-            type="monotone"
-            dataKey="revenue"
-            stroke="#8884d8"
-            fill="#8884d8"
-            fillOpacity={0.6}
-          />
-        </AreaChart>
+          <Bar dataKey="revenue" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   )

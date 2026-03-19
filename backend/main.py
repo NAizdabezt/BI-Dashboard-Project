@@ -219,9 +219,8 @@ def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[s
     
     return correlation_data.to_dict(orient='records')
 
-@app.get("/api/geography/state", response_model=List[StateItem])
+@app.get("/api/charts/top-states", response_model=List[StateItem])
 def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    """API MỚI: Thống kê doanh thu và đơn hàng theo Bang (State)"""
     df = get_data()
     if df.empty: return []
     
@@ -240,7 +239,7 @@ def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str]
     
     return state_data.to_dict(orient='records')
 
-@app.get("/api/behavior/heatmap", response_model=List[HeatmapItem])
+@app.get("/api/charts/shopping-behavior", response_model=List[HeatmapItem])
 def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[str] = None):
     """API MỚI: Phân tích hành vi mua sắm theo Giờ và Thứ trong tuần"""
     df = get_data()
@@ -292,6 +291,95 @@ def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: 
     top_sellers['revenue'] = top_sellers['revenue'].round(2)
     
     return top_sellers.to_dict(orient='records')
+
+@app.get("/api/charts/payment-methods")
+def get_payment_methods():
+    try:
+        # Lấy dữ liệu từ hàm get_data() có sẵn của bạn
+        df = get_data() 
+        
+        # Nếu file CSV của bạn có cột payment_type, nếu không hãy điều chỉnh tên cột cho đúng
+        if 'payment_type' not in df.columns:
+            # Code dự phòng nếu thiếu cột (Mock data)
+            return [
+                {"name": "Thẻ tín dụng", "value": 75000},
+                {"name": "Boleto", "value": 20000},
+                {"name": "Voucher", "value": 15000},
+                {"name": "Thẻ ghi nợ", "value": 5000}
+            ]
+            
+        pay_df = df.groupby('payment_type')['payment_value'].sum().reset_index()
+        pay_df = pay_df.sort_values('payment_value', ascending=False)
+        
+        # Dịch sang tiếng Việt cho đẹp
+        translate = {
+            "credit_card": "Thẻ tín dụng",
+            "boleto": "Boleto (Hóa đơn)",
+            "voucher": "Voucher",
+            "debit_card": "Thẻ ghi nợ"
+        }
+        
+        result = []
+        for _, row in pay_df.iterrows():
+            ptype = row['payment_type']
+            result.append({
+                "name": translate.get(ptype, str(ptype).capitalize()),
+                "value": round(row['payment_value'], 2)
+            })
+        return result
+    except Exception as e:
+        return []
+
+@app.get("/api/charts/order-status")
+def get_order_status():
+    try:
+        df = pd.read_csv(DATA_PATH) # Đổi DATA_PATH thành đường dẫn file gốc chứa đủ status
+        
+        # Đếm số lượng theo trạng thái
+        status_counts = df['order_status'].value_counts().reset_index()
+        status_counts.columns = ['status', 'count']
+        
+        # Gom nhóm và việt hóa cho gọn
+        def map_status(s):
+            if s == 'delivered': return 'Giao thành công'
+            elif s in ['shipped', 'processing', 'invoiced', 'approved']: return 'Đang xử lý/Giao'
+            elif s in ['canceled', 'unavailable']: return 'Hủy/Không hợp lệ'
+            else: return 'Khác'
+            
+        status_counts['status_vi'] = status_counts['status'].apply(map_status)
+        final_status = status_counts.groupby('status_vi')['count'].sum().reset_index()
+        
+        result = [{"name": row['status_vi'], "value": int(row['count'])} for _, row in final_status.iterrows()]
+        return result
+    except Exception as e:
+        return [
+            {"name": "Giao thành công", "value": 96478},
+            {"name": "Hủy/Không hợp lệ", "value": 1234},
+            {"name": "Đang xử lý/Giao", "value": 2105}
+        ]
+
+@app.get("/api/charts/price-tiers")
+def get_price_tiers():
+    try:
+        df = get_data()
+        
+        # Chia khoảng giá (bins)
+        bins = [0, 50, 200, float('inf')]
+        labels = ['Giá rẻ (< 50 R$)', 'Tầm trung (50 - 200 R$)', 'Cao cấp (> 200 R$)']
+        
+        df['price_tier'] = pd.cut(df['price'], bins=bins, labels=labels)
+        tier_revenue = df.groupby('price_tier')['payment_value'].sum().reset_index()
+        
+        result = [{"tier": str(row['price_tier']), "revenue": round(row['payment_value'], 2)} 
+                  for _, row in tier_revenue.iterrows()]
+        return result
+    except Exception as e:
+        # Mock data dự phòng
+        return [
+            {"tier": "Giá rẻ (< 50 R$)", "revenue": 1500000},
+            {"tier": "Tầm trung (50 - 200 R$)", "revenue": 6500000},
+            {"tier": "Cao cấp (> 200 R$)", "revenue": 8000000}
+        ]
 
 @app.get("/api/customers/rfm", response_model=List[RFMSegmentItem])
 def get_rfm_segments():

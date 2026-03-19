@@ -4,6 +4,7 @@ import { RevenueChart } from "@/components/revenue-chart"
 import { TopProductChart } from "@/components/top-product-chart"
 import { PredictForm } from "@/components/predict-form" // <-- Import thêm vũ khí AI vào đây
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Footer } from "@/components/footer"
 
 export default function Home() {
   return (
@@ -43,7 +44,8 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
-        
+      {/* Chân trang */}
+              <Footer />  
       </div>
     </DashboardLayout>
   )

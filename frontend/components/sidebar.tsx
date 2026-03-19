@@ -25,11 +25,13 @@ const items = [
     url: "/",
     icon: Home,
   },
+  
   {
     title: "Biểu đồ chi tiết",
-    url: "#",
+    url: "/details",
     icon: BarChart3,
   },
+
   {
     title: "Dự báo",
     url: "/predict",

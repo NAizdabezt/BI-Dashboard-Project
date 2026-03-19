@@ -8,12 +8,12 @@ import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis, Legend, Ca
 
 interface PredictionData {
   date: string
-  actual_revenue: number | null
-  predicted_revenue: number
+  actual_revenue: number | null  // Đã sửa: Khớp đúng JSON API trả về
+  predicted_revenue: number      // Đã sửa: Khớp đúng JSON API trả về
 }
 
 export function PredictForm() {
-  const [days, setDays] = useState("30")
+  const [days, setDays] = useState("")
   const [prediction, setPrediction] = useState<PredictionData[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -24,14 +24,13 @@ export function PredictForm() {
     setError(null)
 
     try {
-      const daysNum = parseInt(days)
-      if (![7, 14, 30].includes(daysNum)) {
-        setError("Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
-        setLoading(false)
-        return
-      }
-
-      const response = await fetch(`http://localhost:8000/api/predict?days=${daysNum}`)
+      // Đã sửa: Dùng GET và truyền days qua Query URL
+      const response = await fetch(`http://localhost:8000/api/predict?days=${days}&history_days=30`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
 
       if (!response.ok) throw new Error("Lấy dữ liệu dự báo thất bại")
 
@@ -55,15 +54,15 @@ export function PredictForm() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex gap-2">
-            <select
+            <Input
+              type="number"
+              placeholder="Số ngày (vd: 30)"
               value={days}
               onChange={(e) => setDays(e.target.value)}
-              className="border rounded px-3 py-2"
-            >
-              <option value="7">7 ngày</option>
-              <option value="14">14 ngày</option>
-              <option value="30">30 ngày</option>
-            </select>
+              min="1"
+              max="30"
+              required
+            />
             <Button type="submit" disabled={loading}>
               {loading ? "Đang dự báo..." : "Dự báo bằng AI"}
             </Button>
@@ -110,8 +109,19 @@ export function PredictForm() {
                   <Line
                     name="Thực tế (Quá khứ)"
                     type="monotone"
+                    dataKey="actual_revenue"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls={false} // Quan trọng: Để cắt đứt dây khi đến ngày tương lai
+                  />
+                  
+                  {/* Dây 2: Doanh thu dự báo AI (Màu cam, nét đứt) */}
+                  <Line
+                    name="AI Dự Báo"
+                    type="monotone"
                     dataKey="predicted_revenue"
-                    stroke="#ff7300"
+                    stroke="#f97316"
                     strokeDasharray="5 5"
                     strokeWidth={2}
                     dot={false}

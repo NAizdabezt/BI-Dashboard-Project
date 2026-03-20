@@ -160,16 +160,53 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
 @app.get("/api/revenue/daily", response_model=List[RevenueItem])
 def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None):
     df = get_data()
-    if df.empty: return []
+    if df.empty: 
+        return []
     
-    df = filter_by_date(df, start_date, end_date)
+    # 1. Đảm bảo cột thời gian là kiểu Datetime để lọc và group chính xác
+    df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
     
+    # 2. Xử lý bộ lọc ngày (nếu có truyền vào từ Frontend)
+    if start_date:
+        # Chuyển string 'YYYY-MM-DD' sang datetime để so sánh
+        start_dt = pd.to_datetime(start_date)
+        df = df[df['order_purchase_timestamp'] >= start_dt]
+    if end_date:
+        end_dt = pd.to_datetime(end_date)
+        df = df[df['order_purchase_timestamp'] <= end_dt]
+
+    # 3. Groupby theo ngày
     daily_data = df.groupby(df['order_purchase_timestamp'].dt.date)['payment_value'].sum().reset_index()
     daily_data.columns = ['date', 'revenue']
+    
+    # 4. QUAN TRỌNG: Sắp xếp theo ngày tăng dần để biểu đồ đường không bị rối
+    daily_data = daily_data.sort_values('date')
+    
+    # 5. Định dạng lại dữ liệu trước khi trả về
     daily_data['date'] = daily_data['date'].astype(str)
     daily_data['revenue'] = daily_data['revenue'].round(2)
     
     return daily_data.to_dict(orient='records')
+
+@app.get("/api/metadata/date-range")
+def get_date_range():
+    try:
+        df = get_data() # Hàm lấy dữ liệu của bạn
+        if df.empty:
+            return {"min_date": "2017-01-01", "max_date": "2018-12-31"} # Fallback an toàn
+            
+        df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+        
+        # Tìm ngày nhỏ nhất và lớn nhất
+        min_date = df['order_purchase_timestamp'].min().strftime("%Y-%m-%d")
+        max_date = df['order_purchase_timestamp'].max().strftime("%Y-%m-%d")
+        
+        return {
+            "min_date": min_date,
+            "max_date": max_date
+        }
+    except Exception as e:
+        return {"min_date": "2017-01-01", "max_date": "2018-12-31"}
 
 @app.get("/api/products/top", response_model=List[TopProductItem])
 def get_top_products(limit: int = 5, start_date: Optional[str] = None, end_date: Optional[str] = None):
@@ -480,3 +517,46 @@ def get_model_metrics():
         # In lỗi thật ra Terminal để mình còn biết mà sửa
         print(f"❌ Lỗi khi đọc file metrics: {e}") 
         return {"mae": 0, "mape": 0, "rmse": 0, "status": f"Lỗi: {e}"}
+        
+@app.get("/api/insights")
+def get_business_insights(start_date: str = None, end_date: str = None):
+    try:
+        df = get_data()
+        if df.empty: return []
+
+        df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+        
+        # Lọc dữ liệu theo ngày
+        if start_date: df = df[df['order_purchase_timestamp'] >= start_date]
+        if end_date: df = df[df['order_purchase_timestamp'] <= end_date]
+        
+        insights = []
+        
+        # 1. Cảnh báo về Sản phẩm (Ví dụ: Sản phẩm nào mang lại doanh thu cao nhất)
+        top_product = df.groupby('product_id')['payment_value'].sum().sort_values(ascending=False)
+        if not top_product.empty:
+            insights.append({
+                "title": "Sản phẩm chủ lực",
+                "description": f"Sản phẩm top 1 mang lại R$ {top_product.iloc[0]:,.2f} doanh thu trong kỳ này.",
+                "type": "success"
+            })
+
+        # 2. Cảnh báo về xu hướng đơn hàng theo Bang
+        state_orders = df.groupby('customer_state')['order_id'].nunique().sort_values(ascending=False)
+        if len(state_orders) > 0:
+            top_state = state_orders.index[0]
+            insights.append({
+                "title": "Khu vực sôi động nhất",
+                "description": f"Bang {top_state} đang dẫn đầu với {state_orders.iloc[0]} đơn hàng. Nên tập trung marketing vào đây.",
+                "type": "info"
+            })
+
+        # (Bạn có thể thêm các rule cảnh báo sụt giảm doanh thu nếu muốn)
+
+        return insights
+    except Exception as e:
+        return []
+        
+from a2wsgi import ASGIMiddleware
+# Biến ứng dụng FastAPI thành chuẩn WSGI để PythonAnywhere có thể đọc được
+wsgi_app = ASGIMiddleware(app)

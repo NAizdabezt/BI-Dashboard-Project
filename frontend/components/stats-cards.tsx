@@ -11,106 +11,61 @@ interface SummaryData {
   aov?: number
 }
 
-interface StatCardProps {
-  title: string
-  value: string
-  change: string
-  changeType: "positive" | "negative"
-  icon: React.ComponentType<{ className?: string }>
+// 1. Khai báo Props để nhận startDate và endDate từ page.tsx
+interface StatsCardsProps {
+  startDate: string
+  endDate: string
 }
 
-function StatCard({ title, value, change, changeType, icon: Icon }: StatCardProps) {
-  return (
-    <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
-        <p className={`text-xs ${changeType === "positive" ? "text-green-600" : "text-red-600"}`}>
-          {change}
-        </p>
-      </CardContent>
-    </Card>
-  )
-}
-
-export function StatsCards() {
+export function StatsCards({ startDate, endDate }: StatsCardsProps) {
   const [data, setData] = useState<SummaryData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const fetchSummary = async () => {
+      setLoading(true) // Bật loading khi bắt đầu lọc lại
       try {
-        // Gọi API thật từ Backend FastAPI
-        const response = await fetch("http://localhost:8000/api/summary")
+        // 2. Cập nhật URL fetch để gửi kèm tham số lọc ngày
+        const response = await fetch(
+          `http://localhost:8000/api/summary?start_date=${startDate}&end_date=${endDate}`
+        )
         if (!response.ok) throw new Error("Failed to fetch summary")
         const summary: SummaryData = await response.json()
-        // Ensure aov exists
+        
+        // Tính toán AOV nếu backend chưa trả về
         summary.aov = summary.aov ?? (summary.total_orders > 0 ? summary.total_revenue / summary.total_orders : 0)
         setData(summary)
       } catch (err) {
-        setError("Không thể kết nối máy chủ")
+        setError("Không thể cập nhật chỉ số tổng quan")
       } finally {
         setLoading(false)
       }
     }
 
     fetchSummary()
-  }, [])
+  }, [startDate, endDate]) // 3. Lắng nghe thay đổi của ngày để fetch lại
 
-  if (loading) return <div className="p-4">Loading...</div>
-  if (error) return <div className="p-4 text-red-500">Error: {error}</div>
-  if (!data) return <div className="p-4">No data</div>
-
-  const stats = [
-    {
-      title: "Tổng doanh thu",
-      value: `$${(data.total_revenue || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-      change: "+20.1% từ tháng trước",
-      changeType: "positive" as const,
-      icon: DollarSign,
-    },
-    {
-      title: "Tổng đơn hàng",
-      value: (data.total_orders || 0).toLocaleString('en-US'),
-      change: "+15.3% từ tháng trước",
-      changeType: "positive" as const,
-      // icon: ShoppingCart,
-    },
-    {
-      title: "Tỷ lệ tăng trưởng",
-      value: `${(data.growth_rate || 0).toFixed(1)}%`,
-      change: "-2.1% từ tháng trước",
-      changeType: "negative" as const,
-      icon: TrendingUp,
-    },
-    {
-      title: "Giá trị đơn hàng trung bình",
-      value: `$${(data.aov || 0).toFixed(2)}`,
-      change: "+5.4% từ tháng trước",
-      changeType: "positive" as const,
-      // icon: BarChart3,
-    },
-  ]
+  if (loading) return <div className="grid gap-4 md:grid-cols-3 animate-pulse">
+    {[1, 2, 3].map(i => <div key={i} className="h-24 bg-muted rounded-lg" />)}
+  </div>
+  
+  if (error) return <div className="p-4 text-xs text-red-500 border border-red-200 bg-red-50 rounded-lg">{error}</div>
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {/* THẺ 1: TỔNG DOANH THU */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Tổng doanh thu toàn sàn</CardTitle>
+          <CardTitle className="text-sm font-medium">Doanh thu trong kỳ</CardTitle>
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {/* Dấu ? giúp tránh lỗi undefined toLocaleString */}
-            R$ {data?.total_revenue?.toLocaleString("en-US")}
+          <div className="text-2xl font-bold text-blue-600">
+            R$ {data?.total_revenue?.toLocaleString("en-US", { maximumFractionDigits: 0 })}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Cập nhật từ dữ liệu thực tế
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Từ {startDate} đến {endDate}
           </p>
         </CardContent>
       </Card>
@@ -118,32 +73,32 @@ export function StatsCards() {
       {/* THẺ 2: TỔNG SỐ ĐƠN HÀNG */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Tổng số đơn hàng</CardTitle>
+          <CardTitle className="text-sm font-medium">Số lượng đơn hàng</CardTitle>
           <ShoppingBag className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold">
             {data?.total_orders?.toLocaleString("en-US")}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Đơn hàng đã được ghi nhận
+          <p className="text-[10px] text-muted-foreground mt-1">
+            Đơn hàng giao thành công
           </p>
         </CardContent>
       </Card>
 
-      {/* THẺ 3: TỐC ĐỘ TĂNG TRƯỞNG */}
+      {/* THẺ 3: GIÁ TRỊ TRUNG BÌNH (AOV) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">Tăng trưởng (Tháng gần nhất)</CardTitle>
+          <CardTitle className="text-sm font-medium">AOV (Giá trị TB đơn)</CardTitle>
           <TrendingUp className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {(data?.growth_rate || 0) > 0 ? "+" : ""}{data?.growth_rate || 0}%
+          <div className="text-2xl font-bold text-emerald-600">
+            R$ {data?.aov?.toFixed(2)}
           </div>
-          <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
             <Activity className="h-3 w-3" />
-            So với tháng trước đó
+            Hiệu suất trên mỗi đơn hàng
           </p>
         </CardContent>
       </Card>

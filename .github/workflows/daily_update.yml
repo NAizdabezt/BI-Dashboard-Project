@@ -35,7 +35,7 @@ jobs:
     # 3.5. Cài đặt "vũ khí hạng nặng" cho AI (Chỉ cài trên GitHub, không cài trên Server)
     - name: Install Heavy AI Dependencies
       run: |
-        pip install pandas prophet joblib scikit-learn scipy
+        pip install pandas prophet joblib scikit-learn scipy kaggle
 
     # 4. Tải dữ liệu từ Kaggle (Dùng Secret bạn vừa tạo)
     - name: Download Dataset from Kaggle

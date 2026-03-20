@@ -5,7 +5,7 @@ from typing import List, Optional
 import json
 import pandas as pd
 import os
-import joblib
+# import joblib
 import logging
 from datetime import datetime
 
@@ -452,53 +452,45 @@ def get_rfm_segments():
 
 @app.get("/api/predict", response_model=List[PredictionItem])
 def predict_revenue(days: int = 30, history_days: int = 30):
-    """Giữ nguyên logic của AI Prophet"""
+    """API Siêu nhẹ: Chỉ đọc kết quả từ file CSV do GitHub Actions chạy sẵn"""
     try:
         if days not in [7, 14, 30]:
             raise HTTPException(status_code=400, detail="Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
+
+        predict_path = os.path.join(project_root, 'data', 'live', 'predictions.csv')
         
-        if not os.path.exists(model_path):
-            raise HTTPException(status_code=500, detail="Chưa train mô hình AI. Thiếu file pkl.")
+        if not os.path.exists(predict_path):
+            return [] # Trả về mảng rỗng nếu AI chưa kịp chạy sinh ra file
+            
+        df_pred = pd.read_csv(predict_path)
         
-        logger.info("Loading Prophet model...")
-        model = joblib.load(model_path)
+        # --- LOGIC CẮT DỮ LIỆU THÔNG MINH ---
+        # Tách phần lịch sử (có actual_revenue) và phần tương lai (actual_revenue bị trống)
+        is_future = df_pred['actual_revenue'].isna()
         
-        df = get_data()
-        if df.empty:
-            raise HTTPException(status_code=500, detail="Chưa có dữ liệu CSV")
+        # Lấy đủ số ngày quá khứ
+        history_df = df_pred[~is_future].tail(history_days)
+        # Lấy đúng số ngày tương lai mà Frontend yêu cầu (7, 14 hoặc 30)
+        future_df = df_pred[is_future].head(days)
         
-        logger.info("Calculating daily actual revenue...")
-        daily_actual = df.groupby(df['order_purchase_timestamp'].dt.date)['payment_value'].sum().reset_index()
-        daily_actual.columns = ['ds', 'actual_revenue']
-        daily_actual['ds'] = pd.to_datetime(daily_actual['ds'])
+        # Ghép lại
+        final_df = pd.concat([history_df, future_df])
         
-        logger.info(f"Predicting {days} days...")
-        future_dates = model.make_future_dataframe(periods=days)
-        forecast = model.predict(future_dates)
-        
-        forecast_clean = forecast[['ds', 'yhat']].copy()
-        forecast_clean.rename(columns={'yhat': 'predicted_revenue'}, inplace=True)
-        
-        logger.info("Merging forecast with actual data...")
-        merged_df = pd.merge(forecast_clean, daily_actual, on='ds', how='left')
-        final_df = merged_df.tail(min(len(merged_df), history_days + days))  # Tránh lỗi nếu ít data
-        
+        # Đóng gói thành JSON trả về Frontend
         predictions = []
         for _, row in final_df.iterrows():
-            actual_val = None if pd.isna(row['actual_revenue']) else round(float(row['actual_revenue']), 2)
-            pred_val = max(0, round(float(row['predicted_revenue']), 2))
+            actual_val = None if pd.isna(row['actual_revenue']) else float(row['actual_revenue'])
             predictions.append({
-                "date": row['ds'].strftime("%Y-%m-%d"),
+                "date": str(row['date']),
                 "actual_revenue": actual_val,
-                "predicted_revenue": pred_val
+                "predicted_revenue": float(row['predicted_revenue'])
             })
-        
-        logger.info(f"Returning {len(predictions)} predictions")
+            
         return predictions
-    
+
     except Exception as e:
-        logger.error(f"Error in predict_revenue: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Lỗi dự báo: {str(e)}")
+        logger.error(f"Error reading prediction file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Lỗi đọc dữ liệu dự báo: {str(e)}")
 
 @app.get("/api/predict/metrics")
 def get_model_metrics():
@@ -556,7 +548,7 @@ def get_business_insights(start_date: str = None, end_date: str = None):
         return insights
     except Exception as e:
         return []
-        
+
 from a2wsgi import ASGIMiddleware
 # Biến ứng dụng FastAPI thành chuẩn WSGI để PythonAnywhere có thể đọc được
 wsgi_app = ASGIMiddleware(app)

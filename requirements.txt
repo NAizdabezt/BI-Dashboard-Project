@@ -1,20 +1,89 @@
-# --- Xử lý dữ liệu & Tính toán ---
-pandas
-numpy
+name: Daily Data Pipeline
 
-# --- Trực quan hóa (Vẽ biểu đồ trong Notebook) ---
-matplotlib
-seaborn
+# Cấu hình thời gian chạy
+on:
+  schedule:
+    # Chạy vào 00:00 UTC hàng ngày (tức 7:00 sáng Việt Nam)
+    - cron: '0 0 * * *'
+  # Cho phép bấm nút chạy thủ công để test ngay lập tức
+  workflow_dispatch:
 
-# --- Data Engineering (Tự động hóa) ---
-kaggle
-holidays
+permissions:
+  contents: write
 
-# --- AI & Machine Learning (Sắp tới sẽ dùng) ---
-scikit-learn
-joblib
-prophet
+jobs:
+  run-etl-pipeline:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # 1. Lấy mã nguồn từ GitHub về máy chủ ảo
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-# --- Backend API (Cái bạn vừa làm) ---
-fastapi
-uvicorn
+    # 2. Cài đặt Python 3.9
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    # 3. Cài đặt thư viện API cơ bản (Từ file requirements.txt đã được làm nhẹ)
+    - name: Install basic dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # 3.5. Cài đặt "vũ khí hạng nặng" cho AI (Chỉ cài trên GitHub, không cài trên Server)
+    - name: Install Heavy AI Dependencies
+      run: |
+        pip install pandas prophet joblib scikit-learn scipy
+
+    # 4. Tải dữ liệu từ Kaggle (Dùng Secret bạn vừa tạo)
+    - name: Download Dataset from Kaggle
+      env:
+        KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+        KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+      run: |
+        # Tạo thư mục raw nếu chưa có
+        mkdir -p data/raw
+        
+        # Tải bộ Olist về và giải nén vào thư mục data/raw
+        kaggle datasets download -d olistbr/brazilian-ecommerce -p data/raw --unzip -o
+        
+        echo "✅ Đã tải xong dữ liệu từ Kaggle!"
+        ls -l data/raw  # Liệt kê file để kiểm tra
+
+    # 5. Chạy script Time Travel để xử lý dữ liệu
+    - name: Run ETL Script (Time Travel)
+      run: python etl_pipeline/daily_replay.py
+
+    # 6. Train lại mô hình AI tự động
+    - name: Train AI Model
+      run: python notebooks/train_pipeline.py
+      
+    # 7. CHẠY AI DỰ BÁO (BƯỚC MỚI THÊM)
+    # Lấy kết quả lưu thành file predictions.csv siêu nhẹ
+    - name: Run AI Prediction
+      run: python etl_pipeline/run_ai.py
+
+    # 8. Lưu kết quả mới vào Git (Commit & Push)
+    - name: Commit and Push changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # --- QUAN TRỌNG: Add tất cả thay đổi (Data, Model, Predictions, State file) ---
+        git add .
+        # -----------------------------------------------------------------
+        
+        if git diff --staged --quiet; then
+          echo "⚠️ Không có dữ liệu mới để commit."
+        else
+          git commit -m "Auto-update: Cập nhật hệ thống ngày $(date +'%Y-%m-%d')"
+          
+          # --- QUAN TRỌNG: Dòng này giúp chữa lỗi "rejected" ---
+          git pull --rebase origin main
+          # -----------------------------------------------------
+          
+          git push origin main
+          echo "🚀 Đã đẩy dữ liệu mới và file dự báo lên GitHub!"
+        fi

@@ -26,11 +26,16 @@ jobs:
       with:
         python-version: '3.9'
 
-    # 3. Cài đặt thư viện (Đã sửa đúng đường dẫn)
-    - name: Install dependencies
+    # 3. Cài đặt thư viện API cơ bản (Từ file requirements.txt đã được làm nhẹ)
+    - name: Install basic dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
+    # 3.5. Cài đặt "vũ khí hạng nặng" cho AI (Chỉ cài trên GitHub, không cài trên Server)
+    - name: Install Heavy AI Dependencies
+      run: |
+        pip install pandas prophet joblib scikit-learn scipy
 
     # 4. Tải dữ liệu từ Kaggle (Dùng Secret bạn vừa tạo)
     - name: Download Dataset from Kaggle
@@ -42,7 +47,6 @@ jobs:
         mkdir -p data/raw
         
         # Tải bộ Olist về và giải nén vào thư mục data/raw
-        # Lệnh -o (overwrite) để ghi đè nếu file cũ tồn tại
         kaggle datasets download -d olistbr/brazilian-ecommerce -p data/raw --unzip -o
         
         echo "✅ Đã tải xong dữ liệu từ Kaggle!"
@@ -52,18 +56,22 @@ jobs:
     - name: Run ETL Script (Time Travel)
       run: python etl_pipeline/daily_replay.py
 
-    # --- BƯỚC NÀY NẾU BẠN MUỐN CHẠY TRAIN MODEL TỰ ĐỘNG THÌ BỎ COMMENT RA ---
+    # 6. Train lại mô hình AI tự động
     - name: Train AI Model
       run: python notebooks/train_pipeline.py
-    # ------------------------------------------------------------------------
+      
+    # 7. CHẠY AI DỰ BÁO (BƯỚC MỚI THÊM)
+    # Lấy kết quả lưu thành file predictions.csv siêu nhẹ
+    - name: Run AI Prediction
+      run: python etl_pipeline/run_ai.py
 
-    # 6. Lưu kết quả mới vào Git (Commit & Push)
+    # 8. Lưu kết quả mới vào Git (Commit & Push)
     - name: Commit and Push changes
       run: |
         git config --global user.name "github-actions[bot]"
         git config --global user.email "github-actions[bot]@users.noreply.github.com"
         
-        # --- QUAN TRỌNG: Add tất cả thay đổi (Data, Model, State file) ---
+        # --- QUAN TRỌNG: Add tất cả thay đổi (Data, Model, Predictions, State file) ---
         git add .
         # -----------------------------------------------------------------
         
@@ -77,5 +85,5 @@ jobs:
           # -----------------------------------------------------
           
           git push origin main
-          echo "🚀 Đã đẩy dữ liệu mới lên GitHub!"
+          echo "🚀 Đã đẩy dữ liệu mới và file dự báo lên GitHub!"
         fi

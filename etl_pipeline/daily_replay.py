@@ -29,10 +29,13 @@ def main():
     # Đảm bảo cột ngày đúng định dạng Datetime
     full_clean_data['order_purchase_timestamp'] = pd.to_datetime(full_clean_data['order_purchase_timestamp'])
 
-    # 2. KIỂM TRA ĐIỀU KIỆN DỪNG (Rất quan trọng)
+    # 2. KIỂM TRA ĐIỀU KIỆN DỪNG (Sửa lại cho thông minh)
     max_date_in_raw = full_clean_data['order_purchase_timestamp'].max()
-    if current_sim_date > max_date_in_raw:
-        print("✅ Đã chạy hết dữ liệu lịch sử Olist. Dừng Pipeline để không tạo rác.")
+    
+    # CHỈ DỪNG nếu: File CSV đã tồn tại RỒI VÀ ngày mô phỏng đã vượt mức.
+    # Nếu file CSV chưa tồn tại (do mình mới xóa), nó sẽ KHÔNG dừng mà chạy tiếp xuống dưới để tạo file.
+    if os.path.exists(OUTPUT_DASHBOARD) and current_sim_date > max_date_in_raw:
+        print("✅ Dữ liệu đã đầy đủ. Không cần chạy thêm.")
         return
 
     # 3. LỌC DỮ LIỆU ĐÚNG 1 NGÀY HIỆN TẠI (True Incremental)

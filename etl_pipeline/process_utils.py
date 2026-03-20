@@ -1,50 +1,56 @@
 import pandas as pd
 import os
-from translation_map import category_dict # Import từ điển
+from datetime import datetime
+try:
+    from translation_map import category_dict
+except ImportError:
+    category_dict = {}
 
 def load_and_merge_data(raw_data_dir):
     try:
-        print("⏳ Đang đọc dữ liệu từ các file CSV...")
+        print(f"{datetime.now().strftime('%H:%M:%S')} - ⏳ Đang đọc dữ liệu từ các file CSV...")
         
-        # 1. Khai báo thêm đường dẫn bảng Payments
+        # 1. Khai báo đường dẫn các file
         orders_path = os.path.join(raw_data_dir, 'olist_orders_dataset.csv')
         items_path = os.path.join(raw_data_dir, 'olist_order_items_dataset.csv')
         products_path = os.path.join(raw_data_dir, 'olist_products_dataset.csv')
         customers_path = os.path.join(raw_data_dir, 'olist_customers_dataset.csv')
-        payments_path = os.path.join(raw_data_dir, 'olist_order_payments_dataset.csv') # <--- THÊM MỚI
+        payments_path = os.path.join(raw_data_dir, 'olist_order_payments_dataset.csv')
 
-        # Kiểm tra file
+        # Kiểm tra file tồn tại
         if not all(os.path.exists(p) for p in [orders_path, items_path, products_path, customers_path, payments_path]):
             print("❌ Thiếu file dữ liệu đầu vào!")
             return None
 
-        # 2. Đọc dữ liệu (Tối ưu RAM bằng usecols)
+        # 2. Đọc dữ liệu (Đã bổ sung payment_type)
         df_orders = pd.read_csv(orders_path, usecols=['order_id', 'customer_id', 'order_status', 'order_purchase_timestamp'])
         df_items = pd.read_csv(items_path, usecols=['order_id', 'product_id', 'seller_id', 'price', 'freight_value'])
         df_products = pd.read_csv(products_path, usecols=['product_id', 'product_category_name'])
         df_customers = pd.read_csv(customers_path, usecols=['customer_id', 'customer_unique_id', 'customer_city', 'customer_state'])
-        df_payments = pd.read_csv(payments_path, usecols=['order_id', 'payment_value']) # <--- ĐỌC PAYMENTS
+        
+        # Lấy thêm payment_type để vẽ biểu đồ tròn
+        df_payments = pd.read_csv(payments_path, usecols=['order_id', 'payment_value', 'payment_type']) 
 
-        # 3. Làm sạch Orders (Chỉ lấy đơn hàng giao thành công)
-        df_orders = df_orders[df_orders['order_status'] == 'delivered']
+        # 3. Làm sạch Orders
+        df_orders = df_orders[df_orders['order_status'] == 'delivered'].copy()
         df_orders = df_orders.dropna(subset=['order_purchase_timestamp'])
         df_orders['order_purchase_timestamp'] = pd.to_datetime(df_orders['order_purchase_timestamp'])
 
-        # 4. XỬ LÝ BẢNG PAYMENTS (CỰC KỲ QUAN TRỌNG)
-        # Một đơn hàng có thể quẹt 2 thẻ, hoặc 1 voucher + 1 tiền mặt -> Phải gom nhóm (groupby) lại
-        df_payments_grouped = df_payments.groupby('order_id', as_index=False)['payment_value'].sum()
+        # 4. XỬ LÝ BẢNG PAYMENTS (Cập nhật Groupby để không mất loại thanh toán)
+        # Gom nhóm theo cả ID đơn hàng và Loại thanh toán
+        df_payments_grouped = df_payments.groupby(['order_id', 'payment_type'], as_index=False)['payment_value'].sum()
 
-        # 5. Merge dữ liệu (Nối các bảng lại với nhau)
+        # 5. Merge dữ liệu
         merged_df = pd.merge(df_orders, df_items, on='order_id', how='inner')
         merged_df = pd.merge(merged_df, df_customers, on='customer_id', how='left')
         merged_df = pd.merge(merged_df, df_products, on='product_id', how='left')
         
-        # Merge thêm cục Doanh thu thực tế (Payment) vừa tính xong
+        # Hợp nhất với bảng payments (bây giờ đã có payment_type)
         final_df = pd.merge(merged_df, df_payments_grouped, on='order_id', how='left')
 
         # 6. Xử lý Category (Tiếng Việt)
         final_df['product_category_name'] = final_df['product_category_name'].fillna('unknown')
-        if 'category_dict' in globals():
+        if category_dict:
             final_df['Category_VN'] = final_df['product_category_name'].map(category_dict).fillna(final_df['product_category_name'])
             top_categories = list(category_dict.values())
             final_df.loc[~final_df['Category_VN'].isin(top_categories), 'Category_VN'] = 'Khác'
@@ -53,28 +59,28 @@ def load_and_merge_data(raw_data_dir):
 
         # 7. Lọc nhiễu
         final_df = final_df[final_df['price'] < 50000]
-        final_df = final_df.dropna(subset=['seller_id', 'customer_unique_id', 'payment_value']) # Rớt những dòng không có doanh thu
+        final_df = final_df.dropna(subset=['seller_id', 'customer_unique_id', 'payment_value'])
 
-        # 8. Chốt cột hiển thị (Có thêm cột payment_value)
+        # 8. Chốt cột hiển thị (Đã bổ sung payment_type)
         columns_to_keep = [
             'order_id', 
             'order_purchase_timestamp', 
-            'price',                    # Giá niêm yết
-            'freight_value',            # Phí ship
-            'payment_value',            # <--- ĐÂY LÀ DOANH THU THỰC TẾ
-            'order_status',             
-            'seller_id',                
-            'customer_unique_id',       
-            'customer_city',            
-            'customer_state',           
-            'product_category_name',    
-            'Category_VN',              
+            'price', 
+            'freight_value', 
+            'payment_value', 
+            'payment_type', # Cột mới thêm
+            'order_status', 
+            'seller_id', 
+            'customer_unique_id', 
+            'customer_city', 
+            'customer_state', 
+            'Category_VN', 
             'product_id'
         ]
         
-        print(f"✅ Hợp nhất thành công. Tổng số dòng hợp lệ: {len(final_df)}")
+        print(f"✅ Hợp nhất thành công. Tổng số dòng: {len(final_df)}")
         return final_df[columns_to_keep]
 
     except Exception as e:
-        print(f"⚠️ Lỗi xử lý: {e}")
+        print(f"⚠️ Lỗi xử lý trong process_utils: {e}")
         return None

@@ -11,7 +11,13 @@ interface SummaryData {
   aov?: number
 }
 
-// 1. Khai báo Props để nhận startDate và endDate từ page.tsx
+// 1. Cập nhật Interface: Đã thêm 'orders' vào để nhận dữ liệu từ Backend
+interface DailyData {
+  date: string
+  revenue: number
+  orders?: number // <--- Thêm dòng này
+}
+
 interface StatsCardsProps {
   startDate: string
   endDate: string
@@ -19,23 +25,33 @@ interface StatsCardsProps {
 
 export function StatsCards({ startDate, endDate }: StatsCardsProps) {
   const [data, setData] = useState<SummaryData | null>(null)
+  const [latestData, setLatestData] = useState<DailyData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchSummary = async () => {
-      setLoading(true) // Bật loading khi bắt đầu lọc lại
+    const fetchStats = async () => {
+      setLoading(true)
       try {
-        // 2. Cập nhật URL fetch để gửi kèm tham số lọc ngày
-        const response = await fetch(
-          `http://localhost:8000/api/summary?start_date=${startDate}&end_date=${endDate}`
-        )
-        if (!response.ok) throw new Error("Failed to fetch summary")
-        const summary: SummaryData = await response.json()
+        const [summaryRes, dailyRes] = await Promise.all([
+          fetch(`http://localhost:8000/api/summary?start_date=${startDate}&end_date=${endDate}`),
+          fetch(`http://localhost:8000/api/revenue/daily?start_date=${startDate}&end_date=${endDate}`)
+        ])
+
+        if (!summaryRes.ok || !dailyRes.ok) throw new Error("Failed to fetch data")
+
+        const summary: SummaryData = await summaryRes.json()
+        const daily: DailyData[] = await dailyRes.json()
         
-        // Tính toán AOV nếu backend chưa trả về
         summary.aov = summary.aov ?? (summary.total_orders > 0 ? summary.total_revenue / summary.total_orders : 0)
         setData(summary)
+
+        if (daily && daily.length > 0) {
+          setLatestData(daily[daily.length - 1])
+        } else {
+          setLatestData(null)
+        }
+
       } catch (err) {
         setError("Không thể cập nhật chỉ số tổng quan")
       } finally {
@@ -43,8 +59,8 @@ export function StatsCards({ startDate, endDate }: StatsCardsProps) {
       }
     }
 
-    fetchSummary()
-  }, [startDate, endDate]) // 3. Lắng nghe thay đổi của ngày để fetch lại
+    fetchStats()
+  }, [startDate, endDate])
 
   if (loading) return <div className="grid gap-4 md:grid-cols-3 animate-pulse">
     {[1, 2, 3].map(i => <div key={i} className="h-24 bg-muted rounded-lg" />)}
@@ -61,28 +77,53 @@ export function StatsCards({ startDate, endDate }: StatsCardsProps) {
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold text-blue-600">
-            R$ {data?.total_revenue?.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+          <div className="flex items-baseline gap-2">
+            <div className="text-2xl font-bold text-blue-600">
+              R$ {data?.total_revenue?.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+            </div>
+            {latestData && (
+              <div className="text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded text-lg">
+                + R$ {latestData.revenue.toLocaleString("en-US", { maximumFractionDigits: 0 })}
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Từ {startDate} đến {endDate}
-          </p>
+          <div className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-2">
+            <span>Từ {startDate} đến {endDate}</span>
+            {latestData && (
+              <span className="text-muted-foreground/80 font-normal">
+                (Ngày {latestData.date})
+              </span>
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      {/* THẺ 2: TỔNG SỐ ĐƠN HÀNG */}
+      {/* THẺ 2: TỔNG SỐ ĐƠN HÀNG (ĐÃ CẬP NHẬT GIAO DIỆN NGANG HÀNG) */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-sm font-medium">Số lượng đơn hàng</CardTitle>
           <ShoppingBag className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
-          <div className="text-2xl font-bold">
-            {data?.total_orders?.toLocaleString("en-US")}
+          <div className="flex items-baseline gap-2">
+            <div className="text-2xl font-bold">
+              {data?.total_orders?.toLocaleString("en-US")}
+            </div>
+            {/* Hiện số lượng đơn hàng cộng thêm */}
+            {latestData && latestData.orders !== undefined && (
+              <div className="text-emerald-600 font-medium bg-emerald-50 px-1.5 py-0.5 rounded text-lg">
+                + {latestData.orders.toLocaleString("en-US")}
+              </div>
+            )}
           </div>
-          <p className="text-[10px] text-muted-foreground mt-1">
-            Đơn hàng giao thành công
-          </p>
+          <div className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-2">
+            <span>Đơn hàng giao thành công</span>
+            {latestData && latestData.orders !== undefined && (
+              <span className="text-muted-foreground/80 font-normal">
+                (Ngày {latestData.date})
+              </span>
+            )}
+          </div>
         </CardContent>
       </Card>
 
@@ -96,7 +137,7 @@ export function StatsCards({ startDate, endDate }: StatsCardsProps) {
           <div className="text-2xl font-bold text-emerald-600">
             R$ {data?.aov?.toFixed(2)}
           </div>
-          <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1">
             <Activity className="h-3 w-3" />
             Hiệu suất trên mỗi đơn hàng
           </p>

@@ -30,7 +30,18 @@ def load_and_merge_data(raw_data_dir):
         
         # Lấy thêm payment_type để vẽ biểu đồ tròn
         df_payments = pd.read_csv(payments_path, usecols=['order_id', 'payment_value', 'payment_type']) 
+        
+        try:
+            status_df = df_orders.copy()
+            status_df['date'] = pd.to_datetime(status_df['order_purchase_timestamp']).dt.date.astype(str)
+            status_summary = status_df.groupby(['date', 'order_status']).size().reset_index(name='count')
+            # Lưu ra một file CSV siêu nhẹ (chỉ khoảng 50KB)
+            status_summary.to_csv(os.path.join('data', 'live', 'order_status_summary.csv'), index=False)
+        except Exception as e:
+            print(f"Lỗi tạo file trạng thái: {e}")
+        # ------------------------------------------------------------------
 
+        df_items = pd.read_csv(paths['items'], usecols=['order_id', 'product_id', 'seller_id', 'price', 'freight_value'])
         # 3. Làm sạch Orders
         df_orders = df_orders[df_orders['order_status'] == 'delivered'].copy()
         df_orders = df_orders.dropna(subset=['order_purchase_timestamp'])

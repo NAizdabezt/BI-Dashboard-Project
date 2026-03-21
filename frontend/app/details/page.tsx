@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { format } from "date-fns"
 import { DateRange } from "react-day-picker"
-
+import { useFilters } from "@/contexts/FilterContext"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DatePickerWithRange } from "@/components/ui/date-range-picker"

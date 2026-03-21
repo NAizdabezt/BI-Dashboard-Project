@@ -55,7 +55,7 @@ export default function DetailsPage() {
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-slate-950">
               {/* 👇 3. ĐÃ SỬA: Truyền đủ Props 👇 */}
-              <OrderStatusChart startDate={startDate} endDate={endDate} category={category} />
+              <OrderStatusChart startDate={startDate} endDate={endDate} />
             </CardContent>
           </Card>
           

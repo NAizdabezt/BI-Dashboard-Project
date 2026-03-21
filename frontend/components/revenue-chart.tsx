@@ -25,7 +25,7 @@ export function RevenueChart({ startDate, endDate }: RevenueChartProps) {
       try {
         // 2. Cập nhật URL để gửi kèm tham số lọc ngày lên Backend Python
         const response = await fetch(
-          `http://localhost:8000/api/revenue/daily?start_date=${startDate}&end_date=${endDate}`
+          `https://bi-dashboard-project.onrender.com/api/revenue/daily?start_date=${startDate}&end_date=${endDate}`
         )
         if (!response.ok) throw new Error("Failed to fetch historical data")
         const historical: RevenueData[] = await response.json()

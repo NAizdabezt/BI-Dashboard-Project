@@ -45,7 +45,7 @@ export function PaymentChart() {
   useEffect(() => {
     const fetchPayments = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/charts/payment-methods")
+        const response = await fetch("https://bi-dashboard-project.onrender.com/api/charts/payment-methods")
         if (!response.ok) throw new Error("Failed to fetch")
         const result = await response.json()
         setData(result)

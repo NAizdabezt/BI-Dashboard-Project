@@ -34,8 +34,8 @@ export function StatsCards({ startDate, endDate }: StatsCardsProps) {
       setLoading(true)
       try {
         const [summaryRes, dailyRes] = await Promise.all([
-          fetch(`http://localhost:8000/api/summary?start_date=${startDate}&end_date=${endDate}`),
-          fetch(`http://localhost:8000/api/revenue/daily?start_date=${startDate}&end_date=${endDate}`)
+          fetch(`https://bi-dashboard-project.onrender.com/api/summary?start_date=${startDate}&end_date=${endDate}`),
+          fetch(`https://bi-dashboard-project.onrender.com/api/revenue/daily?start_date=${startDate}&end_date=${endDate}`)
         ])
 
         if (!summaryRes.ok || !dailyRes.ok) throw new Error("Failed to fetch data")

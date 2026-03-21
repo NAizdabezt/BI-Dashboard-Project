@@ -21,7 +21,7 @@ export default function Home() {
   useEffect(() => {
     const fetchDateRange = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/metadata/date-range")
+        const response = await fetch("https://bi-dashboard-project.onrender.com/api/metadata/date-range")
         if (response.ok) {
           const { min_date, max_date } = await response.json()
           

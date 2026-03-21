@@ -26,7 +26,7 @@ export function TopProductChart({ startDate, endDate }: TopProductProps) {
       try {
         // 2. Cập nhật URL: Thêm tham số lọc thời gian gửi lên Backend
         const response = await fetch(
-          `http://localhost:8000/api/products/top?limit=5&start_date=${startDate}&end_date=${endDate}`
+          `https://bi-dashboard-project.onrender.com/api/products/top?limit=5&start_date=${startDate}&end_date=${endDate}`
         )
         if (!response.ok) throw new Error("Failed to fetch products")
         

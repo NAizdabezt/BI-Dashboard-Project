@@ -16,7 +16,7 @@ export function TopStateChart() {
   useEffect(() => {
     const fetchTopStates = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/charts/top-states") 
+        const response = await fetch("https://bi-dashboard-project.onrender.com/api/charts/top-states") 
         if (!response.ok) throw new Error("Failed to fetch states")
         const states: TopState[] = await response.json()
         setData(states)

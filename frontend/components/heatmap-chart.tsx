@@ -37,7 +37,7 @@ export function HeatmapChart() {
   useEffect(() => {
     const fetchHeatmapData = async () => {
       try {
-        const response = await fetch("http://localhost:8000/api/charts/shopping-behavior") 
+        const response = await fetch("https://bi-dashboard-project.onrender.com/api/charts/shopping-behavior") 
         if (!response.ok) throw new Error("Failed to fetch behavior")
         const rawData: HeatmapData[] = await response.json()
         

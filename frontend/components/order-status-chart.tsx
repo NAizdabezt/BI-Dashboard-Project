@@ -25,7 +25,7 @@ export function OrderStatusChart() {
   const [data, setData] = useState<StatusData[]>([])
   
   useEffect(() => {
-    fetch("http://localhost:8000/api/charts/order-status")
+    fetch("https://bi-dashboard-project.onrender.com/api/charts/order-status")
       .then(res => res.json()).then(setData).catch(console.error)
   }, [])
 

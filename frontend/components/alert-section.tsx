@@ -24,7 +24,7 @@ export function AlertSection({ startDate, endDate }: AlertSectionProps) {
       setLoading(true)
       try {
         // Gọi API thật từ Backend
-        const response = await fetch(`http://localhost:8000/api/insights?start_date=${startDate}&end_date=${endDate}`)
+        const response = await fetch(`https://bi-dashboard-project.onrender.com/api/insights?start_date=${startDate}&end_date=${endDate}`)
         if (response.ok) {
           const data = await response.json()
           setAlerts(data)

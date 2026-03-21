@@ -25,7 +25,7 @@ export function PredictForm() {
 
     try {
       // Đã sửa: Dùng GET và truyền days qua Query URL
-      const response = await fetch(`http://localhost:8000/api/predict?days=${days}&history_days=30`, {
+      const response = await fetch(`https://bi-dashboard-project.onrender.com/api/predict?days=${days}&history_days=30`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",

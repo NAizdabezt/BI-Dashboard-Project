@@ -9,7 +9,7 @@ export function PriceTierChart() {
   const [data, setData] = useState<TierData[]>([])
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/charts/price-tiers")
+    fetch("https://bi-dashboard-project.onrender.com/api/charts/price-tiers")
       .then(res => res.json())
       .then(setData)
       .catch(console.error)

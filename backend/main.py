@@ -8,6 +8,7 @@ import csv
 import logging
 from datetime import datetime
 from a2wsgi import ASGIMiddleware
+from functools import lru_cache
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,7 +25,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- KHAI BÁO SCHEMAS (Giữ nguyên 100% của Kỹ sư trưởng) ---
+# --- KHAI BÁO SCHEMAS ---
 class RevenueItem(BaseModel):
     date: str
     revenue: float
@@ -94,7 +95,7 @@ def get_data() -> list:
         logger.info("🔄 Đang Load/Reload dữ liệu CSV bằng Python thuần...")
         try:
             temp_data = []
-            with open(csv_path, mode='r', encoding='utf-8') as f:
+            with open(csv_path, mode='r', encoding='utf-8-sig') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     # Rút gọn và chuẩn hóa dữ liệu ngay lúc đọc để tối ưu RAM
@@ -120,18 +121,25 @@ def get_data() -> list:
             
     return CACHED_DATA
 
-def filter_by_date(data: list, start_date: str = None, end_date: str = None) -> list:
-    """Bộ lọc tốc độ ánh sáng bằng Python thuần"""
-    if not start_date and not end_date:
+# 👇 BƯỚC CẢI TIẾN LỚN: HÀM LỌC ĐA NĂNG (NGÀY + DANH MỤC)
+def filter_data(data: list, start_date: str = None, end_date: str = None, category: str = "all") -> list:
+    """Bộ lọc tốc độ ánh sáng bằng Python thuần hỗ trợ lọc cả Ngày và Danh mục"""
+    if not start_date and not end_date and (not category or category == "all"):
         return data
         
     filtered = []
-    # So sánh chuỗi ngày (YYYY-MM-DD) cực kỳ chuẩn xác và nhanh
     for row in data:
+        # 1. Lọc theo ngày
         if start_date and row['date'] < start_date[:10]:
             continue
         if end_date and row['date'] > end_date[:10]:
             continue
+        # 2. Lọc theo danh mục
+        if category and category != "all":
+            # Nếu danh mục của dòng hiện tại KHÔNG KHỚP với danh mục đang chọn -> Bỏ qua
+            if row.get('Category_VN') != category:
+                continue
+                
         filtered.append(row)
     return filtered
 
@@ -141,7 +149,7 @@ async def startup_event():
     get_data() 
 
 # -----------------------------
-# CÁC ENDPOINT API CHÍNH
+# CÁC ENDPOINT API CHÍNH (ĐÃ BỔ SUNG CATEGORY)
 # -----------------------------
 
 @app.get("/")
@@ -149,8 +157,8 @@ def read_root():
     return {"message": "Olist BI Dashboard API is running siêu mượt (Zero Pandas)!"}
 
 @app.get("/api/summary", response_model=SummaryData)
-def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     if not data:
         return {"total_revenue": 0, "total_orders": 0, "growth_rate": 0, "aov": 0}
 
@@ -162,7 +170,7 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
     # Tính Growth Rate theo tháng
     monthly_rev = {}
     for row in data:
-        month = row['date'][:7] # Lấy YYYY-MM
+        month = row['date'][:7] 
         monthly_rev[month] = monthly_rev.get(month, 0) + row['payment_value']
     
     sorted_months = sorted(monthly_rev.keys())
@@ -181,8 +189,8 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
     }
 
 @app.get("/api/revenue/daily")
-def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     daily_stats = {}
     for row in data:
@@ -214,8 +222,8 @@ def get_date_range():
     }
 
 @app.get("/api/products/top", response_model=List[TopProductItem])
-def get_top_products(limit: int = 5, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_top_products(limit: int = 7, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     products = {}
     for row in data:
@@ -225,7 +233,6 @@ def get_top_products(limit: int = 5, start_date: Optional[str] = None, end_date:
         products[pid]['rev'] += row['price']
         products[pid]['orders'].add(row['order_id'])
         
-    # Format thành List
     result = []
     for pid, stats in products.items():
         result.append({
@@ -234,14 +241,13 @@ def get_top_products(limit: int = 5, start_date: Optional[str] = None, end_date:
             "orders": len(stats['orders'])
         })
         
-    # Sort và lấy top
     result = sorted(result, key=lambda x: x['revenue'], reverse=True)[:limit]
     for r in result: r['revenue'] = round(r['revenue'], 2)
     return result
 
 @app.get("/api/price-correlation", response_model=List[PriceCorrelationItem])
-def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     tiers = {
         'Dưới 50 R$': {'rev': 0, 'orders': set()},
@@ -274,8 +280,8 @@ def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[s
     return result
 
 @app.get("/api/charts/top-states", response_model=List[StateItem])
-def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     states = {}
     for row in data:
@@ -289,15 +295,14 @@ def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str]
     return sorted(result, key=lambda x: x['revenue'], reverse=True)
 
 @app.get("/api/charts/shopping-behavior", response_model=List[HeatmapItem])
-def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     day_map = {0: 'Thứ 2', 1: 'Thứ 3', 2: 'Thứ 4', 3: 'Thứ 5', 4: 'Thứ 6', 5: 'Thứ 7', 6: 'Chủ Nhật'}
     heatmap = {}
     
     for row in data:
         try:
-            # Parse datetime: '2018-08-08 10:00:00'
             dt = datetime.strptime(row['timestamp'][:19], '%Y-%m-%d %H:%M:%S')
             key = (day_map[dt.weekday()], dt.hour)
             if key not in heatmap: heatmap[key] = set()
@@ -309,8 +314,8 @@ def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[s
     return result
 
 @app.get("/api/sellers/top", response_model=List[TopSellerItem])
-def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     sellers = {}
     for row in data:
@@ -325,8 +330,8 @@ def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: 
     return sorted(result, key=lambda x: x['revenue'], reverse=True)[:limit]
 
 @app.get("/api/charts/payment-methods")
-def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     pay_dict = {}
     for row in data:
@@ -342,11 +347,12 @@ def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str
 
 @app.get("/api/charts/order-status")
 def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    # Đọc file mini siêu nhẹ do process_utils sinh ra
+    # LƯU Ý: Đơn hàng ở file này bị gộp theo ngày (không có thông tin Category).
+    # Nên biểu đồ này chỉ lọc theo ngày, không lọc theo Category.
     status_path = os.path.join(project_root, 'data', 'live', 'order_status_summary.csv')
     
     if not os.path.exists(status_path):
-        return [] # Nếu chưa có file thì trả về rỗng để Frontend không sập
+        return [] 
         
     status_dict = {'Giao thành công': 0, 'Đang xử lý/Giao': 0, 'Hủy/Không hợp lệ': 0, 'Khác': 0}
     
@@ -355,7 +361,6 @@ def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] =
             reader = csv.DictReader(f)
             for row in reader:
                 d = row['date']
-                # Chạy bộ lọc ngày tháng siêu tốc
                 if start_date and d < start_date[:10]: continue
                 if end_date and d > end_date[:10]: continue
                 
@@ -373,8 +378,8 @@ def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] =
         return []
 
 @app.get("/api/charts/price-tiers")
-def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
     
     tiers = {'Giá rẻ (< 50 R$)': 0, 'Tầm trung (50 - 200 R$)': 0, 'Cao cấp (> 200 R$)': 0}
     for row in data:
@@ -387,6 +392,7 @@ def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = 
 
 @app.get("/api/customers/rfm", response_model=List[RFMSegmentItem])
 def get_rfm_segments():
+    # File RFM không có category, trả nguyên bản
     rfm_path = os.path.join(project_root, 'data', 'live', 'customer_rfm.csv')
     if not os.path.exists(rfm_path): return []
     
@@ -394,7 +400,6 @@ def get_rfm_segments():
     try:
         with open(rfm_path, mode='r', encoding='utf-8') as f:
             reader = csv.DictReader(f)
-            # Chuẩn hóa tên cột
             reader.fieldnames = [col.lower() for col in reader.fieldnames]
             for row in reader:
                 seg = row.get('segment', 'Khác')
@@ -459,26 +464,42 @@ def get_model_metrics():
         return {"mae": 0, "mape": 0, "rmse": 0, "status": f"Lỗi: {e}"}
 
 @app.get("/api/insights")
-def get_business_insights(start_date: str = None, end_date: str = None):
-    data = filter_by_date(get_data(), start_date, end_date)
+def get_business_insights(
+    start_date: str = None, 
+    end_date: str = None, 
+    category: str = "all",
+    # 👇 1. ĐÃ SỬA: Mở cổng nhận tham số aov_target từ Frontend (mặc định 120) 👇
+    aov_target: float = Query(120.0) 
+):
+    data = filter_data(get_data(), start_date, end_date, category)
     if not data: return []
     
     insights = []
     
-    # 1. Sản phẩm chủ lực
     prods = {}
     states = {}
+    payments = {}
+    total_rev = 0
+    unique_orders = set()
+    
     for row in data:
         prods[row['product_id']] = prods.get(row['product_id'], 0) + row['payment_value']
+        
         s = row['customer_state']
         if s not in states: states[s] = set()
         states[s].add(row['order_id'])
+        
+        ptype = row.get('payment_type', 'unknown')
+        payments[ptype] = payments.get(ptype, 0) + row['payment_value']
+        
+        total_rev += row['payment_value']
+        unique_orders.add(row['order_id'])
         
     if prods:
         top_p = max(prods.items(), key=lambda x: x[1])
         insights.append({
             "title": "Sản phẩm chủ lực",
-            "description": f"Sản phẩm top 1 mang lại R$ {top_p[1]:,.2f} doanh thu trong kỳ này.",
+            "description": f"Sản phẩm top 1 mang lại R$ {top_p[1]:,.0f} doanh thu trong kỳ. Hãy đảm bảo luôn sẵn hàng trong kho.",
             "type": "success"
         })
         
@@ -486,11 +507,114 @@ def get_business_insights(start_date: str = None, end_date: str = None):
         top_s = max(states.items(), key=lambda x: len(x[1]))
         insights.append({
             "title": "Khu vực sôi động nhất",
-            "description": f"Bang {top_s[0]} đang dẫn đầu với {len(top_s[1])} đơn hàng.",
+            "description": f"Bang {top_s[0]} đang dẫn đầu với {len(top_s[1])} đơn hàng. Cân nhắc đẩy mạnh quảng cáo tại đây.",
             "type": "info"
         })
         
+    if payments:
+        top_pay = max(payments.items(), key=lambda x: x[1])
+        translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto", "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
+        pay_name = translate.get(top_pay[0], top_pay[0].capitalize())
+        insights.append({
+            "title": "Kênh thanh toán ưu chuộng",
+            "description": f"Khách hàng dùng {pay_name} nhiều nhất (R$ {top_pay[1]:,.0f}). Có thể kết hợp ngân hàng làm chương trình hoàn tiền.",
+            "type": "info"
+        })
+        
+    if unique_orders:
+        aov = total_rev / len(unique_orders)
+        
+        # 👇 2. ĐÃ SỬA: Dùng aov_target thay cho số 120 cứng nhắc 👇
+        if aov < aov_target: 
+            insights.append({
+                "title": "Cần chiến lược Upsell (Bán chéo)",
+                # 👇 3. ĐÃ SỬA: Đưa mục tiêu vào câu văn để Frontend dịch tiền tệ luôn 👇
+                "description": f"Giá trị trung bình mỗi đơn (R$ {aov:,.0f}) đang thấp hơn mục tiêu đề ra (R$ {aov_target:,.0f}). Nên tạo combo Mua 2 tặng 1 để kích cầu.",
+                "type": "warning" 
+            })
+        else:
+            insights.append({
+                "title": "Hiệu suất đơn hàng cực tốt",
+                "description": f"Giá trị trung bình mỗi đơn đạt R$ {aov:,.0f}, vượt mức kỳ vọng (R$ {aov_target:,.0f}). Khách hàng đang có xu hướng chi tiêu mạnh tay.",
+                "type": "success"
+            })
+            
     return insights
+
+@app.get("/api/charts/seller-performance")
+def get_seller_performance(start_date: str = None, end_date: str = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
+    if not data: return []
+    
+    sellers = {}
+    for row in data:
+        sid = row.get('seller_id', 'Unknown')
+        short_id = f"Seller {sid[:7].upper()}"
+        sellers[short_id] = sellers.get(short_id, 0) + row.get('payment_value', 0)
+        
+    top_sellers = sorted(sellers.items(), key=lambda x: x[1], reverse=True)[:7]
+    return [{"name": k, "value": v} for k, v in top_sellers]
+
+@app.get("/api/charts/top-categories")
+def get_top_categories(start_date: str = None, end_date: str = None, category: str = "all"):
+    data = filter_data(get_data(), start_date, end_date, category)
+    if not data: return []
+    
+    categories = {}
+    for row in data:
+        cat = row.get('Category_VN') 
+        if not cat or str(cat).lower() == 'nan':
+            cat = "Khác"
+            
+        try:
+            val = float(row.get('payment_value', 0) or 0)
+        except ValueError:
+            val = 0
+            
+        categories[cat] = categories.get(cat, 0) + val
+        
+    top_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)[:7]
+    return [{"name": str(k), "value": v} for k, v in top_cats]
+
+@lru_cache(maxsize=1)
+def get_cached_filters():
+    print("🚀 Đang đọc file CSV để lấy metadata bộ lọc danh mục...")
+    categories = set()
+    
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    
+    # ==========================================
+    # CHỈ LẤY DANH MỤC TỪ SALES_DASHBOARD.CSV
+    # ==========================================
+    sales_file = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "live", "sales_dashboard.csv"))
+    if os.path.exists(sales_file):
+        with open(sales_file, mode="r", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                cat = row.get('Category_VN') 
+                if cat and str(cat).strip() and str(cat).lower() != 'nan':
+                    categories.add(str(cat))
+    else:
+        print(f"⚠️ Không tìm thấy: {sales_file}")
+
+    print(f"✅ Đã load thành công {len(categories)} danh mục!")
+        
+    return {
+        # Không cần trả về statuses nữa, Frontend cũng đã bỏ nhận rồi
+        "categories": sorted(list(categories))
+    }      
+    
+@app.get("/api/metadata/filters")
+def get_filters_metadata():
+    return get_cached_filters()
+
+@app.post("/api/system/clear-cache")
+def clear_system_cache():
+    global CACHED_DATA
+    CACHED_DATA = None # Phá hủy cache cũ
+    
+    # Hàm load_data() sẽ tự động nạp lại CSV mới khi có ai đó gọi API tiếp theo
+    return {"status": "success", "message": "Bộ nhớ đệm đã được dọn dẹp. Dữ liệu sẽ được đọc lại ở lần tải tiếp theo."}
 
 # Biến ứng dụng FastAPI thành chuẩn WSGI để PythonAnywhere có thể đọc được
 wsgi_app = ASGIMiddleware(app)

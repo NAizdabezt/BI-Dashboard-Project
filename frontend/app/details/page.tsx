@@ -1,12 +1,9 @@
-"use client" // Bắt buộc phải có dòng này để chạy các hiệu ứng của React
+"use client" 
 
-import { useState, useEffect } from "react"
 import { format } from "date-fns"
-import { DateRange } from "react-day-picker"
 import { useFilters } from "@/contexts/FilterContext"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DatePickerWithRange } from "@/components/ui/date-range-picker"
 
 // Import các Component
 import { TopStateChart } from "@/components/top-state-chart"
@@ -17,38 +14,18 @@ import { PaymentChart } from "@/components/payment-chart"
 import { OrderStatusChart } from "@/components/order-status-chart"
 import { PriceTierChart } from "@/components/price-tier-chart"
 
-// Import thêm bộ Icon để trang trí chuẩn Figma
+// Import thêm bộ Icon
 import { BarChart4, Map, Activity, CreditCard, PieChart, Clock, Users } from "lucide-react"
 
 export default function DetailsPage() {
-  // 1. Khởi tạo State và lấy ngày tháng y như trang chủ
-  const [date, setDate] = useState<DateRange | undefined>()
-
-  useEffect(() => {
-    const fetchDateRange = async () => {
-      try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
-        const response = await fetch(`${baseUrl}/api/metadata/date-range`)
-        if (response.ok) {
-          const { min_date, max_date } = await response.json()
-          setDate({ from: new Date(min_date), to: new Date(max_date) })
-        }
-      } catch (error) {
-        console.error("Lỗi khi lấy ngày:", error)
-      }
-    }
-    fetchDateRange()
-  }, [])
-
-  // 2. Chuyển đổi định dạng để truyền vào Component con
-  const startDate = date?.from ? format(date.from, "yyyy-MM-dd") : ""
-  const endDate = date?.to ? format(date.to, "yyyy-MM-dd") : ""
+  // 👇 1. ĐÃ SỬA: Chỉ dùng duy nhất bộ lọc tổng (FilterContext), xóa mấy cái state tự gọi API cục bộ gây nhiễu 👇
+  const { startDate, endDate, category } = useFilters()
 
   return (
     <DashboardLayout>
-      <div className="space-y-8 flex flex-col">
+      <div className="space-y-8 flex flex-col min-h-screen">
         
-        {/* TIÊU ĐỀ TRANG VÀ BỘ LỌC */}
+        {/* TIÊU ĐỀ TRANG */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
           <div className="space-y-1">
             <div className="flex items-center gap-2">
@@ -63,13 +40,9 @@ export default function DetailsPage() {
               Phân tích chuyên sâu về hành vi khách hàng, địa lý và phân khúc RFM.
             </p>
           </div>
-          
-          <div className="flex items-center gap-3">
-            {/* Gắn cái Lịch chọn ngày vào đây */}
-            <DatePickerWithRange date={date} setDate={setDate} />
-          </div>
         </div>
 
+        {/* 👇 2. ĐÃ SỬA: Sắp xếp lại Cấu trúc Grid cho chuẩn xác 👇 */}
         {/* HÀNG 1: TRẠNG THÁI ĐƠN HÀNG & PHƯƠNG THỨC THANH TOÁN */}
         <div className="grid gap-6 md:grid-cols-2">
           <Card className="shadow-sm border-slate-200 rounded-xl overflow-hidden dark:border-slate-800">
@@ -81,8 +54,8 @@ export default function DetailsPage() {
               <CardDescription>Kiểm soát lượng đơn hủy và thành công</CardDescription>
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-slate-950">
-              {/* Nếu chart này có hỗ trợ startDate/endDate thì Anh truyền thêm vào nhé */}
-              <OrderStatusChart /> 
+              {/* 👇 3. ĐÃ SỬA: Truyền đủ Props 👇 */}
+              <OrderStatusChart startDate={startDate} endDate={endDate} category={category} />
             </CardContent>
           </Card>
           
@@ -95,7 +68,7 @@ export default function DetailsPage() {
               <CardDescription>Tỷ trọng doanh thu theo cổng thanh toán</CardDescription>
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-slate-950">
-              <PaymentChart startDate={startDate} endDate={endDate} />
+              <PaymentChart startDate={startDate} endDate={endDate} category={category} />
             </CardContent>
           </Card>
         </div>
@@ -111,7 +84,7 @@ export default function DetailsPage() {
               <CardDescription>Top 10 Bang có sức mua lớn nhất</CardDescription>
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-slate-950">
-              <TopStateChart />
+              <TopStateChart startDate={startDate} endDate={endDate} category={category} />
             </CardContent>
           </Card>
 
@@ -124,7 +97,7 @@ export default function DetailsPage() {
               <CardDescription>Phân khúc giá mang lại lợi nhuận chính</CardDescription>
             </CardHeader>
             <CardContent className="p-6 bg-white dark:bg-slate-950">
-              <PriceTierChart />
+              <PriceTierChart startDate={startDate} endDate={endDate} category={category} />
             </CardContent>
           </Card>
         </div>
@@ -139,7 +112,7 @@ export default function DetailsPage() {
             <CardDescription>Mật độ đơn hàng theo Thứ và Giờ trong ngày</CardDescription>
           </CardHeader>
           <CardContent className="p-6 bg-white dark:bg-slate-950 overflow-x-auto">
-            <HeatmapChart />
+            <HeatmapChart startDate={startDate} endDate={endDate} category={category} />
           </CardContent>
         </Card>
 
@@ -153,6 +126,7 @@ export default function DetailsPage() {
             <CardDescription>Phân loại khách hàng dựa trên Recency, Frequency, và Monetary</CardDescription>
           </CardHeader>
           <CardContent className="p-6 bg-white dark:bg-slate-950">
+            {/* Vì RFMTable hiện tại của Anh đang dùng mockData nên tui chưa ép nó nhận startDate/endDate */}
             <RFMTable />
           </CardContent>
         </Card>

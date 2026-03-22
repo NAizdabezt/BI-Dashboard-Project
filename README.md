@@ -2,10 +2,11 @@
 
 > **Hệ thống phân tích kinh doanh và dự báo doanh số bán hàng tự động dựa trên dữ liệu Olist.**
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-![Pandas](https://img.shields.io/badge/Pandas-Data%20Analysis-orange)
-![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automation-2088FF)
-![Status](https://img.shields.io/badge/Status-In%20Progress-yellow)
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688?logo=fastapi&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-Automation-2088FF?logo=github-actions&logoColor=white)
+![Deployment](https://img.shields.io/badge/Deployed_on-Vercel_%26_Render-success)
 
 ## 📖 Giới thiệu (Overview)
 
@@ -15,38 +16,37 @@ Dự án này được xây dựng nhằm mục đích **mô phỏng quy trình 
 
 ## 🚀 Tính năng nổi bật (Key Features)
 
-* **🔄 Automated ETL Pipeline:** Tự động tải, làm sạch và tích hợp dữ liệu từ 4 nguồn khác nhau (Orders, Items, Customers, Products).
-* **🇻🇳 Localization:** Tự động dịch và chuẩn hóa danh mục sản phẩm từ tiếng Bồ Đào Nha sang tiếng Việt.
-* **⏳ Time Travel Data Replay:** Cơ chế giả lập dòng thời gian thực, tự động cập nhật dữ liệu mới mỗi ngày (Incremental Loading) thông qua GitHub Actions.
-* **🧠 Feature Engineering for AI:** Tự động tạo các biến đặc trưng nâng cao (Lag features, Rolling window, Holiday events) để huấn luyện mô hình.
-* **📊 Future Dashboard:** (Đang phát triển) Hệ thống báo cáo trực quan và API dự báo thời gian thực.
+* **🔄 Automated ETL Pipeline:** Tự động tải, làm sạch và tích hợp dữ liệu từ nhiều nguồn (Orders, Items, Customers, Payments) thông qua GitHub Actions.
+* **⏳ Time Travel Data Replay:** Cơ chế giả lập dòng thời gian thực, tự động cập nhật dữ liệu mới mỗi ngày (Incremental Loading).
+* **🧠 Smart AI Insights:** Tích hợp mô hình phân tích hành vi mua hàng. Trí tuệ nhân tạo tự động đọc dữ liệu và đưa ra lời khuyên chiến lược (Upsell, Marketing) dựa trên **Ngưỡng AOV Mục tiêu** do người dùng thiết lập theo thời gian thực.
+* **🌐 Đa tiền tệ & Localization:** Hỗ trợ quy đổi tỷ giá trực tiếp trên giao diện (Real Brazil `R$`, Đô la Mỹ `$`, Việt Nam Đồng `₫`). Danh mục sản phẩm được chuẩn hóa từ tiếng Bồ Đào Nha sang tiếng Việt.
+* **📱 Responsive Modern Dashboard:** Giao diện người dùng (UI/UX) cực kỳ hiện đại, hỗ trợ Dark/Light mode, Sidebar thông minh trượt mở trên Mobile, tối ưu hóa trải nghiệm đa nền tảng.
 
 ## 📂 Cấu trúc dự án (Project Structure)
 
 ```text
 BI-Dashboard-Project/
-├── .github/workflows/      # Cấu hình GitHub Actions (Tự động hóa)
-│   └── daily_update.yml    # Workflow chạy ETL hàng ngày lúc 7:00 AM
-├── data/
-│   ├── raw/                # Dữ liệu thô tải từ Kaggle (Không push lên Git)
-│   └── live/               # Dữ liệu sạch đã qua xử lý (sales_dashboard.csv)
-├── etl_pipeline/           # Mã nguồn xử lý dữ liệu (Data Engineering)
-│   ├── process_utils.py    # Các hàm làm sạch, merge và dịch thuật
-│   ├── translation_map.py  # Từ điển dịch danh mục sản phẩm
+├── .github/workflows/      # Cấu hình GitHub Actions (CI/CD & Cron jobs)
+│   └── daily_update.yml    # Workflow chạy ETL hàng ngày
+├── backend/                # ⚙️ API Server (FastAPI)
+│   ├── main.py             # Entry point chứa các API endpoints (/api/insights, /api/system/clear-cache...)
+│   └── data/live/          # Nơi chứa file CSV đã được làm sạch bởi ETL
+├── frontend/               # 💻 Giao diện người dùng (Next.js 15 + React)
+│   ├── app/                # App Router (Pages: Dashboard, Chi tiết, Cài đặt...)
+│   ├── components/         # Các UI components (Charts, Sidebar, FilterBar...)
+│   └── contexts/           # Global State Management (Currency, Filters)
+├── etl_pipeline/           # 🔄 Mã nguồn xử lý dữ liệu (Data Engineering)
 │   └── daily_replay.py     # Script chính điều khiển "Cỗ máy thời gian"
-├── notebooks/              # Nơi nghiên cứu và phân tích (Data Science)
-│   ├── 01_EDA_Overview.ipynb                # Khám phá dữ liệu & Biểu đồ cơ bản
-│   ├── 02_Feature_Engineering_Dataset.ipynb # Tạo biến Lag & Chuẩn bị data train AI
-│   └── ...
+├── notebooks/              # 📊 Nơi nghiên cứu mô hình AI (Data Science)
+│   └── ...                 # EDA, Feature Engineering, Training Models
 ├── simulation_state.txt    # Lưu trạng thái ngày hiện tại của hệ thống giả lập
-├── requirements.txt        # Danh sách các thư viện cần thiết
-└── README.md               # Tài liệu hướng dẫn
+└── README.md               # Tài liệu dự án
 ```
 ## 🛠️ Cài đặt & Sử dụng (Installation & Usage)
 
 **1. Yêu cầu tiên quyết**
-* Python 3.9 trở lên
-* Tài khoản Kaggle (để tải dữ liệu gốc)
+* Python 3.9+ (Dành cho Backend & ETL)
+* Node.js v18+ (Dành cho Frontend)
 
 **2. Cài đặt môi trường**
 
@@ -57,7 +57,20 @@ cd BI-Dashboard-Project
 
 # Cài đặt thư viện
 pip install -r requirements.txt
+
+# Khởi chạy server uvicorn
+uvicorn backend.main:app --reload --port 8000
 ```
+Khởi chạy giao diện Frontend (Next.js):
+```bash
+# Cài đặt thư viện Node
+npm install
+
+# Chạy server phát triển
+npm run dev
+```
+_Dashboard sẽ hiển thị tại: http://localhost:3000_
+
 **3. Cấu hình "Cỗ máy thời gian"**
 
 Để bắt đầu giả lập từ một ngày trong quá khứ, hãy chỉnh sửa file **simulation_state.txt**:
@@ -77,14 +90,14 @@ _Hệ thống sẽ tải dữ liệu, xử lý và lưu kết quả vào data/li
   * [x] Xây dựng ETL Pipeline.
   * [x] Tích hợp GitHub Actions tự động hóa.
   * [x] Xử lý tiếng Việt và làm sạch dữ liệu.
-* [ ] Phase 2: Data Science & AI
+* [x] Phase 2: Data Science & AI
   * [x] Feature Engineering (Tạo biến Lag, Holiday...).
   * [x] EDA (Phân tích khám phá).
   * [x] Train các model: Linear Regression, Prophet, XGBoost.
-  * [ ] Đánh giá model (Evaluation).
-* [ ] Phase 3: Backend & Deployment
-  * [ ] Xây dựng API với FastAPI.
-  * [ ] Xây dựng Dashboard (Streamlit/PowerBI).
+  * [x] Đánh giá model (Evaluation).
+* [x] Phase 3: Backend & Deployment
+  * [x] Xây dựng API với FastAPI.
+  * [x] Xây dựng Dashboard (Streamlit/PowerBI).
   
 ## 👥 Thành viên nhóm (Team Members)
 | Họ và Tên | Vai Trò |

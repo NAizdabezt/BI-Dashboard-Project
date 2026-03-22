@@ -2,18 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation" // Dùng để xác định tab nào đang được bấm
-import {
-  BarChart3,
-  Home,
-  TrendingUp,
-  ChevronsUpDown,
-  Settings,
-  CircleDollarSign,
-  Users,
-  Truck,
-  Bot
-} from "lucide-react"
+import { usePathname } from "next/navigation" 
+import { BarChart3, Home, TrendingUp, ChevronsUpDown, Settings, CircleDollarSign, Users, Truck, Bot } from "lucide-react"
 
 import {
   Sidebar,
@@ -24,50 +14,27 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarHeader, // Thêm Header
-  SidebarFooter, // Thêm Footer
+  SidebarHeader, 
+  SidebarFooter,
+  useSidebar, // 👇 1. IMPORT THÊM HOOK NÀY TỪ SHADCN 👇
 } from "@/components/ui/sidebar"
 
-// Menu items giữ nguyên link của Anh, tui thêm cái Cài đặt cho giống Figma
 const items = [
-  {
-    title: "Tổng quan",
-    url: "/",
-    icon: Home,
-  },
-  {
-    title: "Doanh số & Tiền tệ",
-    url: "/sales",
-    icon: CircleDollarSign,
-  },
-  {
-    title: "Khách hàng & Hành vi",
-    url: "/customers",
-    icon: Users,
-  },
-  {
-    title: "Vận hành & Khu vực",
-    url: "/logistics",
-    icon: Truck,
-  },
-  {
-    title: "Dự báo AI",
-    url: "/predict",
-    icon: Bot,
-  },
-  {
-    title: "Cài đặt",
-    url: "/settings",
-    icon: Settings,
-  }
+  { title: "Tổng quan", url: "/", icon: Home },
+  { title: "Doanh số & Tiền tệ", url: "/sales", icon: CircleDollarSign },
+  { title: "Khách hàng & Hành vi", url: "/customers", icon: Users },
+  { title: "Vận hành & Khu vực", url: "/logistics", icon: Truck },
+  { title: "Dự báo AI", url: "/predict", icon: Bot },
+  { title: "Cài đặt", url: "/settings", icon: Settings }
 ]
+
 export function AppSidebar() {
-  // Lấy đường dẫn hiện tại để làm sáng Tab tương ứng
   const pathname = usePathname()
+  // 👇 2. GỌI HÀM SET TRẠNG THÁI MOBILE 👇
+  const { setOpenMobile } = useSidebar()
 
   return (
     <Sidebar>
-      {/* 1. HEADER SIDEBAR: LOGO VÀ TÊN PROJECT NHƯ FIGMA */}
       <SidebarHeader className="p-4 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-purple-600 text-white font-black text-xl flex items-center justify-center h-10 w-10 shadow-md shadow-purple-500/20">
@@ -85,7 +52,6 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
 
-      {/* 2. MAIN MENU */}
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel className="mt-2 text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -94,12 +60,10 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu className="gap-1.5 mt-2">
               {items.map((item) => {
-                // Kiểm tra xem tab này có đang được chọn không
                 const isActive = pathname === item.url;
                 
                 return (
                   <SidebarMenuItem key={item.title}>
-                    {/* Thêm hiệu ứng màu Tím/Xám mượt mà */}
                     <SidebarMenuButton 
                       asChild 
                       isActive={isActive} 
@@ -110,8 +74,12 @@ export function AppSidebar() {
                           : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'}
                       `}
                     >
-                      {/* Đổi <a> thành <Link> để load trang siêu tốc không bị chớp trắng */}
-                      <Link href={item.url} className="flex items-center gap-3">
+                      <Link 
+                        href={item.url} 
+                        className="flex items-center gap-3"
+                        // 👇 3. ĐÃ SỬA: Bấm vào Link xong thì tự động đóng menu trên Mobile 👇
+                        onClick={() => setOpenMobile(false)} 
+                      >
                         <item.icon className={`h-4 w-4 ${isActive ? "text-purple-600 dark:text-purple-400" : ""}`} />
                         <span>{item.title}</span>
                       </Link>
@@ -124,7 +92,6 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* 3. FOOTER SIDEBAR: THÔNG TIN USER NHƯ FIGMA */}
       <SidebarFooter className="p-4 border-t border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 font-bold dark:bg-slate-800 dark:text-slate-300">

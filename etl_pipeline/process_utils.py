@@ -18,9 +18,11 @@ def load_and_merge_data(raw_data_dir):
         payments_path = os.path.join(raw_data_dir, 'olist_order_payments_dataset.csv')
 
         # Kiểm tra file tồn tại
-        if not all(os.path.exists(p) for p in [orders_path, items_path, products_path, customers_path, payments_path]):
-            print("❌ Thiếu file dữ liệu đầu vào!")
-            return None
+        required_paths = [orders_path, items_path, products_path, customers_path, payments_path]
+        for p in required_paths:
+            if not os.path.exists(p):
+                print(f"❌ Thiếu file dữ liệu đầu vào: {p}")
+                return None
 
         # 2. Đọc dữ liệu (Đã bổ sung payment_type)
         df_orders = pd.read_csv(orders_path, usecols=['order_id', 'customer_id', 'order_status', 'order_purchase_timestamp'])
@@ -41,7 +43,7 @@ def load_and_merge_data(raw_data_dir):
             print(f"Lỗi tạo file trạng thái: {e}")
         # ------------------------------------------------------------------
 
-        df_items = pd.read_csv(paths['items'], usecols=['order_id', 'product_id', 'seller_id', 'price', 'freight_value'])
+        # df_items = pd.read_csv(paths['items'], usecols=['order_id', 'product_id', 'seller_id', 'price', 'freight_value'])
         # 3. Làm sạch Orders
         df_orders = df_orders[df_orders['order_status'] == 'delivered'].copy()
         df_orders = df_orders.dropna(subset=['order_purchase_timestamp'])

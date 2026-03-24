@@ -616,5 +616,19 @@ def clear_system_cache():
     # Hàm load_data() sẽ tự động nạp lại CSV mới khi có ai đó gọi API tiếp theo
     return {"status": "success", "message": "Bộ nhớ đệm đã được dọn dẹp. Dữ liệu sẽ được đọc lại ở lần tải tiếp theo."}
 
+@app.get("/api/metadata/last-update")
+def get_last_update():
+    # Đường dẫn trỏ tới file dữ liệu mà ETL sinh ra
+    file_path = "data/live/sales_dashboard.csv" 
+    
+    if os.path.exists(file_path):
+        # Lấy thời gian file được hệ thống sửa đổi lần cuối (modified time)
+        mtime = os.path.getmtime(file_path)
+        dt = datetime.fromtimestamp(mtime)
+        # Format lại cho đẹp: "22/03/2026 07:05 AM"
+        return {"last_updated": dt.strftime("%d/%m/%Y %I:%M %p")}
+    
+    return {"last_updated": "Chưa có dữ liệu"}
+
 # Biến ứng dụng FastAPI thành chuẩn WSGI để PythonAnywhere có thể đọc được
 wsgi_app = ASGIMiddleware(app)

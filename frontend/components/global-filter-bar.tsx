@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import { useFilters } from "@/contexts/FilterContext"
 import { DatePickerWithRange } from "@/components/ui/date-range-picker"
-// 👇 1. ĐÃ SỬA: Import thêm icon Clock từ lucide-react 👇
 import { Filter, XCircle, Clock } from "lucide-react"
 import { usePathname } from "next/navigation"
 
@@ -13,11 +12,11 @@ export function GlobalFilterBar() {
   const { date, setDate, category, setCategory } = useFilters()
   const [availableCategories, setAvailableCategories] = useState<string[]>([])
   
-  // 👇 2. ĐÃ SỬA: Thêm state để lưu thời gian cập nhật ETL 👇
   const [lastUpdated, setLastUpdated] = useState<string>("Đang kiểm tra...")
   
   if (pathname === "/settings") return null;
   
+  // 1. CHẠY KHI LOAD TRANG: Lấy metadata và thời gian cập nhật
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
@@ -32,7 +31,6 @@ export function GlobalFilterBar() {
       }
     }
 
-    // 👇 3. ĐÃ SỬA: Hàm gọi API kiểm tra thời gian file CSV được ghi mới 👇
     const fetchLastUpdate = async () => {
       try {
         const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
@@ -49,8 +47,42 @@ export function GlobalFilterBar() {
     }
 
     fetchMetadata()
-    fetchLastUpdate() // Chạy song song khi load trang
+    fetchLastUpdate() 
   }, [])
+
+  // 🔥 BỘ LẮNG NGHE TÍN HIỆU TỪ AI CỰC KỲ AN TOÀN 🔥
+  useEffect(() => {
+    const handleAIFilterCommand = (e: any) => {
+      try {
+        const { startDate, endDate, category: aiCategory } = e.detail;
+        console.log("🤖 Dashboard nhận lệnh xử lý:", e.detail);
+
+        // 1. XỬ LÝ NGÀY THÁNG (Chống lỗi Null/Undefined)
+        if (startDate && endDate && startDate !== "null" && endDate !== "null") {
+          const fromDate = new Date(startDate);
+          const toDate = new Date(endDate);
+          // Kiểm tra xem ngày có hợp lệ không trước khi set
+          if (!isNaN(fromDate.getTime()) && !isNaN(toDate.getTime())) {
+            setDate({ from: fromDate, to: toDate });
+          }
+        }
+
+        // 2. XỬ LÝ DANH MỤC (Chống lỗi String toLowerCase)
+        if (aiCategory && typeof aiCategory === 'string' && aiCategory.toLowerCase() !== "null" && aiCategory.toLowerCase() !== "none") {
+          // Bắt buộc setCategory (Nếu không có trong Dropdown thì API vẫn sẽ tự tìm)
+          setCategory(aiCategory);
+        } else {
+          // Nếu không nhắc đến danh mục -> Chọn Tất cả
+          setCategory("all");
+        }
+      } catch (err) {
+        console.error("❌ Lỗi khi áp dụng bộ lọc từ AI:", err);
+      }
+    };
+
+    window.addEventListener('ai-update-global-filter', handleAIFilterCommand);
+    return () => window.removeEventListener('ai-update-global-filter', handleAIFilterCommand);
+  }, [setDate, setCategory]);
 
   const handleClearFilters = async () => {
     setCategory("all")
@@ -74,7 +106,6 @@ export function GlobalFilterBar() {
         <div className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
           <Filter className="h-4 w-4 text-purple-600" /> Bộ lọc tổng
         </div>
-        {/* 👇 4. ĐÃ SỬA: Thêm dòng hiển thị thời gian bằng chữ nhỏ màu xám 👇 */}
         <div className="flex items-center gap-1.5 mt-1 text-[11px] font-medium text-slate-500 dark:text-slate-400">
           <Clock className="h-3 w-3" />
           <span>Dữ liệu mới nhất: <span className="text-emerald-600 dark:text-emerald-400">{lastUpdated}</span></span>

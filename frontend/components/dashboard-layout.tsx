@@ -1,9 +1,10 @@
 "use client"
 
 import { AppSidebar } from "@/components/sidebar" 
-// 👇 1. IMPORT THÊM SidebarTrigger TỪ SHADCN 👇
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar"
 import { GlobalFilterBar } from "@/components/global-filter-bar"
+// 👇 1. IMPORT THÊM COMPONENT TRỢ LÝ AI VÀO ĐÂY 👇
+import { AIChatbot } from "@/components/ai-chatbot"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -15,9 +16,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
 
         {/* Cột phải: Nội dung chính */}
         {/* Đã thêm min-w-0 và overflow-hidden để chống vỡ layout trên mobile */}
-        <main className="flex-1 w-full flex flex-col min-w-0 overflow-hidden">
+        <main className="flex-1 w-full flex flex-col min-w-0 overflow-hidden relative">
           
-          {/* 👇 2. ĐÃ SỬA: THANH HEADER DÀNH RIÊNG CHO MOBILE 👇 */}
+          {/* THANH HEADER DÀNH RIÊNG CHO MOBILE */}
           <header className="md:hidden flex items-center h-14 px-4 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 sticky top-0 z-30 shadow-sm">
             {/* Nút 3 gạch gọi Sidebar */}
             <SidebarTrigger className="text-slate-600 dark:text-slate-300 -ml-2" />
@@ -43,6 +44,9 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               {children}
             </div>
           </div>
+
+          {/* 👇 2. ĐÃ SỬA: NHÚNG TRỢ LÝ AI VÀO GÓC MÀN HÌNH 👇 */}
+          <AIChatbot />
 
         </main>
       </div>

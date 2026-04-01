@@ -4,26 +4,31 @@ import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Settings, Moon, Sun, Monitor, DollarSign, BrainCircuit, Target, Database, RefreshCw, CheckCircle2 } from "lucide-react"
-
-// 👇 1. KẾT NỐI VỚI TRUNG TÂM TIỀN TỆ 👇
+// 👇 1. ĐÃ SỬA: Import thêm icon Key cho phần Cấu hình AI 👇
+import { Settings, Moon, Sun, Monitor, DollarSign, BrainCircuit, Target, Database, RefreshCw, CheckCircle2, Key } from "lucide-react"
 import { useCurrency } from "@/contexts/CurrencyContext"
 
 export default function SettingsPage() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   
-  // 👇 2. GỌI THÊM HÀM formatMoney TỪ CONTEXT 👇
   const { currency, setCurrency, formatMoney } = useCurrency()
   
   const [aovTarget, setAovTarget] = useState(120)
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncSuccess, setSyncSuccess] = useState(false)
 
+  // 👇 2. ĐÃ THÊM: State để lưu Gemini API Key 👇
+  const [apiKey, setApiKey] = useState("")
+
   useEffect(() => {
     setMounted(true)
     const savedAov = localStorage.getItem("app_aov_target")
     if (savedAov) setAovTarget(Number(savedAov))
+
+    // 👇 3. ĐÃ THÊM: Tải API Key từ LocalStorage lên khi mở trang 👇
+    const savedKey = localStorage.getItem("GEMINI_API_KEY")
+    if (savedKey) setApiKey(savedKey)
   }, [])
 
   const handleAovChange = (val: number) => {
@@ -31,14 +36,19 @@ export default function SettingsPage() {
     localStorage.setItem("app_aov_target", val.toString())
   }
 
-  // 👇 3. ĐÃ SỬA: GỌI API THẬT ĐẾN BACKEND ĐỂ XÓA CACHE 👇
+  // 👇 4. ĐÃ THÊM: Hàm lưu API Key vào trình duyệt 👇
+  const handleSaveKey = () => {
+    localStorage.setItem("GEMINI_API_KEY", apiKey)
+    alert("Đã lưu API Key thành công! Trợ lý AI đã sẵn sàng hoạt động.")
+  }
+
   const handleSyncData = async () => {
     setIsSyncing(true)
     setSyncSuccess(false)
     try {
       const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
       const response = await fetch(`${baseUrl}/api/system/clear-cache`, {
-        method: 'POST', // Dùng POST cho các hành động thay đổi dữ liệu hệ thống
+        method: 'POST', 
       })
 
       if (response.ok) {
@@ -134,7 +144,11 @@ export default function SettingsPage() {
                           name="currency" 
                           value={curr.id} 
                           checked={currency === curr.id}
-                          onChange={() => setCurrency(curr.id as "BRL" | "USD" | "VND")}
+                          onChange={() => {
+                            setCurrency(curr.id as "BRL" | "USD" | "VND");
+                            // 🔥 ĐÂY LÀ DÒNG QUYẾT ĐỊNH 🔥
+                            localStorage.setItem("currency", curr.id);
+                          }}
                           className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-gray-300"
                         />
                       </div>
@@ -151,6 +165,38 @@ export default function SettingsPage() {
 
           {/* CỘT PHẢI */}
           <div className="md:col-span-5 space-y-6">
+            
+            {/* 👇 5. ĐÃ THÊM: KHỐI NHẬP API KEY (Nằm trên cùng bên phải) 👇 */}
+            <Card className="shadow-sm border-slate-200 rounded-xl overflow-hidden dark:border-slate-800 bg-white dark:bg-slate-950 border-amber-200 dark:border-amber-900/50">
+              <CardHeader className="border-b border-slate-100 dark:border-slate-900 pb-4 bg-amber-50/30 dark:bg-amber-900/10">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Key className="h-5 w-5 text-amber-500" /> Cấu hình Trợ lý AI
+                </CardTitle>
+                <CardDescription>Nhập khóa Gemini API để kích hoạt Chatbot Copilot.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  Hệ thống sử dụng mô hình BYOK (Bring Your Own Key). Mã này chỉ lưu trữ cục bộ trên trình duyệt của sếp để đảm bảo an toàn.
+                </p>
+                <div className="flex flex-col gap-3">
+                  <input 
+                    type="password" 
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="Dán Google Gemini API Key vào đây..."
+                    className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
+                  />
+                  <button 
+                    onClick={handleSaveKey}
+                    className="w-full py-2 bg-amber-500 text-white rounded-xl hover:bg-amber-600 font-bold transition-colors text-sm shadow-sm"
+                  >
+                    Lưu khóa cấu hình
+                  </button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* KHỐI HUẤN LUYỆN AI */}
             <Card className="shadow-sm border-slate-200 rounded-xl overflow-hidden dark:border-slate-800 bg-white dark:bg-slate-950">
               <CardHeader className="border-b border-slate-100 dark:border-slate-900 pb-4 bg-slate-50/50 dark:bg-slate-900/20">
                 <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -166,7 +212,6 @@ export default function SettingsPage() {
                         <Target className="h-4 w-4 text-purple-500"/> Ngưỡng AOV Mục tiêu
                       </label>
                       <span className="text-sm font-extrabold text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30 px-2 py-0.5 rounded whitespace-nowrap">
-                        {/* 👇 4. ĐÃ SỬA: Hiển thị đúng tiền tệ đang chọn 👇 */}
                         {formatMoney(aovTarget)}
                       </span>
                     </div>
@@ -181,7 +226,6 @@ export default function SettingsPage() {
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer dark:bg-slate-700 accent-purple-600"
                     />
                     <div className="flex justify-between text-[10px] font-medium text-slate-400">
-                      {/* 👇 5. ĐÃ SỬA: Dịch tiền tệ cho 3 mốc đo của thanh trượt 👇 */}
                       <span>{formatMoney(50, true)}</span>
                       <span>{formatMoney(150, true)}</span>
                       <span>{formatMoney(300, true)}</span>
@@ -191,6 +235,7 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
+            {/* KHỐI DỮ LIỆU & CACHE */}
             <Card className="shadow-sm border-slate-200 rounded-xl overflow-hidden dark:border-slate-800 bg-white dark:bg-slate-950">
               <CardHeader className="border-b border-slate-100 dark:border-slate-900 pb-4 bg-slate-50/50 dark:bg-slate-900/20">
                 <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -224,6 +269,7 @@ export default function SettingsPage() {
                 </button>
               </CardContent>
             </Card>
+
           </div>
         </div>
       </div>

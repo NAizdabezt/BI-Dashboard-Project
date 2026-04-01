@@ -9,6 +9,8 @@ import logging
 from datetime import datetime
 from a2wsgi import ASGIMiddleware
 from functools import lru_cache
+import urllib.request
+import urllib.error
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -73,6 +75,14 @@ class RFMSegmentItem(BaseModel):
     total_revenue: float
     avg_recency: float
 
+class ChatMessage(BaseModel):
+    message: str
+    api_key: Optional[str] = None
+    currency: Optional[str] = "BRL"
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    category: Optional[str] = None
+
 # --- CẤU HÌNH ĐƯỜNG DẪN & GLOBAL CACHE ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
@@ -101,7 +111,7 @@ def get_data() -> list:
                     # Rút gọn và chuẩn hóa dữ liệu ngay lúc đọc để tối ưu RAM
                     temp_data.append({
                         'order_id': row.get('order_id', ''),
-                        'date': row.get('order_purchase_timestamp', '')[:10], # Lấy YYYY-MM-DD
+                        'date': row.get('order_purchase_timestamp', '')[:10],
                         'timestamp': row.get('order_purchase_timestamp', ''),
                         'payment_value': float(row.get('payment_value', 0) or 0),
                         'price': float(row.get('price', 0) or 0),
@@ -121,7 +131,6 @@ def get_data() -> list:
             
     return CACHED_DATA
 
-# 👇 BƯỚC CẢI TIẾN LỚN: HÀM LỌC ĐA NĂNG (NGÀY + DANH MỤC)
 def filter_data(data: list, start_date: str = None, end_date: str = None, category: str = "all") -> list:
     """Bộ lọc tốc độ ánh sáng bằng Python thuần hỗ trợ lọc cả Ngày và Danh mục"""
     if not start_date and not end_date and (not category or category == "all"):
@@ -136,7 +145,6 @@ def filter_data(data: list, start_date: str = None, end_date: str = None, catego
             continue
         # 2. Lọc theo danh mục
         if category and category != "all":
-            # Nếu danh mục của dòng hiện tại KHÔNG KHỚP với danh mục đang chọn -> Bỏ qua
             if row.get('Category_VN') != category:
                 continue
                 
@@ -149,7 +157,7 @@ async def startup_event():
     get_data() 
 
 # -----------------------------
-# CÁC ENDPOINT API CHÍNH (ĐÃ BỔ SUNG CATEGORY)
+# CÁC ENDPOINT API CHÍNH
 # -----------------------------
 
 @app.get("/")
@@ -167,7 +175,6 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
     total_orders = len(unique_orders)
     aov = total_revenue / total_orders if total_orders > 0 else 0
 
-    # Tính Growth Rate theo tháng
     monthly_rev = {}
     for row in data:
         month = row['date'][:7] 
@@ -347,8 +354,6 @@ def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str
 
 @app.get("/api/charts/order-status")
 def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] = None):
-    # LƯU Ý: Đơn hàng ở file này bị gộp theo ngày (không có thông tin Category).
-    # Nên biểu đồ này chỉ lọc theo ngày, không lọc theo Category.
     status_path = os.path.join(project_root, 'data', 'live', 'order_status_summary.csv')
     
     if not os.path.exists(status_path):
@@ -392,7 +397,6 @@ def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = 
 
 @app.get("/api/customers/rfm", response_model=List[RFMSegmentItem])
 def get_rfm_segments():
-    # File RFM không có category, trả nguyên bản
     rfm_path = os.path.join(project_root, 'data', 'live', 'customer_rfm.csv')
     if not os.path.exists(rfm_path): return []
     
@@ -468,7 +472,6 @@ def get_business_insights(
     start_date: str = None, 
     end_date: str = None, 
     category: str = "all",
-    # 👇 1. ĐÃ SỬA: Mở cổng nhận tham số aov_target từ Frontend (mặc định 120) 👇
     aov_target: float = Query(120.0) 
 ):
     data = filter_data(get_data(), start_date, end_date, category)
@@ -524,11 +527,9 @@ def get_business_insights(
     if unique_orders:
         aov = total_rev / len(unique_orders)
         
-        # 👇 2. ĐÃ SỬA: Dùng aov_target thay cho số 120 cứng nhắc 👇
         if aov < aov_target: 
             insights.append({
                 "title": "Cần chiến lược Upsell (Bán chéo)",
-                # 👇 3. ĐÃ SỬA: Đưa mục tiêu vào câu văn để Frontend dịch tiền tệ luôn 👇
                 "description": f"Giá trị trung bình mỗi đơn (R$ {aov:,.0f}) đang thấp hơn mục tiêu đề ra (R$ {aov_target:,.0f}). Nên tạo combo Mua 2 tặng 1 để kích cầu.",
                 "type": "warning" 
             })
@@ -578,15 +579,12 @@ def get_top_categories(start_date: str = None, end_date: str = None, category: s
 
 @lru_cache(maxsize=1)
 def get_cached_filters():
-    print("🚀 Đang đọc file CSV để lấy metadata bộ lọc danh mục...")
+    logger.info("🚀 Đang đọc file CSV để lấy metadata bộ lọc danh mục...")
     categories = set()
     
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    
-    # ==========================================
-    # CHỈ LẤY DANH MỤC TỪ SALES_DASHBOARD.CSV
-    # ==========================================
     sales_file = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "live", "sales_dashboard.csv"))
+    
     if os.path.exists(sales_file):
         with open(sales_file, mode="r", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
@@ -595,12 +593,11 @@ def get_cached_filters():
                 if cat and str(cat).strip() and str(cat).lower() != 'nan':
                     categories.add(str(cat))
     else:
-        print(f"⚠️ Không tìm thấy: {sales_file}")
+        logger.warning(f"⚠️ Không tìm thấy: {sales_file}")
 
-    print(f"✅ Đã load thành công {len(categories)} danh mục!")
+    logger.info(f"✅ Đã load thành công {len(categories)} danh mục!")
         
     return {
-        # Không cần trả về statuses nữa, Frontend cũng đã bỏ nhận rồi
         "categories": sorted(list(categories))
     }      
     
@@ -611,24 +608,229 @@ def get_filters_metadata():
 @app.post("/api/system/clear-cache")
 def clear_system_cache():
     global CACHED_DATA
-    CACHED_DATA = None # Phá hủy cache cũ
+    CACHED_DATA = [] # Reset lại bộ nhớ đệm dữ liệu chính
     
-    # Hàm load_data() sẽ tự động nạp lại CSV mới khi có ai đó gọi API tiếp theo
+    # 👇 Điểm nâng cấp: Xóa luôn cache của bộ lọc danh mục
+    get_cached_filters.cache_clear() 
+    
     return {"status": "success", "message": "Bộ nhớ đệm đã được dọn dẹp. Dữ liệu sẽ được đọc lại ở lần tải tiếp theo."}
 
 @app.get("/api/metadata/last-update")
 def get_last_update():
-    # Đường dẫn trỏ tới file dữ liệu mà ETL sinh ra
     file_path = "data/live/sales_dashboard.csv" 
     
     if os.path.exists(file_path):
-        # Lấy thời gian file được hệ thống sửa đổi lần cuối (modified time)
         mtime = os.path.getmtime(file_path)
         dt = datetime.fromtimestamp(mtime)
-        # Format lại cho đẹp: "22/03/2026 07:05 AM"
         return {"last_updated": dt.strftime("%d/%m/%Y %I:%M %p")}
     
     return {"last_updated": "Chưa có dữ liệu"}
 
-# Biến ứng dụng FastAPI thành chuẩn WSGI để PythonAnywhere có thể đọc được
+@app.post("/api/chat")
+async def chat_with_ai(req: ChatMessage):
+    try:
+        raw_key = req.api_key or os.getenv("GROQ_API_KEY")
+        if not raw_key:
+            return {"reply": "Lỗi: Sếp chưa cấu hình API Key ở trang Cài đặt!", "action": "NONE"}
+        key_to_use = raw_key.strip()
+
+        import urllib.request
+        import json
+
+        # 1. QUY ĐỔI TIỀN TỆ
+        user_currency = req.currency or "BRL"
+        rate = 1.0
+        symbol = "R$"
+        if user_currency == "USD":
+            rate = 0.2  
+            symbol = "$"
+        elif user_currency == "VND":
+            rate = 5000 
+            symbol = "VNĐ"
+
+        summary = get_summary(start_date=req.start_date, end_date=req.end_date, category=req.category)
+        top_products = get_top_products(limit=3, start_date=req.start_date, end_date=req.end_date, category=req.category)
+        
+        prod_text = ", ".join([f"{p['product_name']}" for p in top_products]) if top_products else "Không có dữ liệu"
+
+        ai_total_rev = summary.get('total_revenue', 0) * rate
+        ai_aov = summary.get('aov', 0) * rate
+        current_time_range = f"Từ {req.start_date} đến {req.end_date}" if req.start_date else "Toàn thời gian"
+        
+        # 🔥 Ý TƯỞNG 2: BÁO CÁO NHANH TỰ ĐỘNG KHỞI TẠO (SILENT ALERT) 🔥
+        if req.message == "[INIT_ALERT]":
+            return {
+                "reply": f"🚨 **Báo cáo nhanh hệ thống:**\nDoanh thu hiện tại đang đạt **{ai_total_rev:,.0f} {symbol}**. Danh mục **{top_products[0]['product_name'] if top_products else 'N/A'}** đang dẫn đầu mảng Sales. Sếp cần tôi phân tích, vẽ biểu đồ hay so sánh gì hôm nay không?",
+                "action": "NONE"
+            }
+
+        # 2. NÃO BỘ AI (SYSTEM PROMPT)
+        system_prompt = f"""
+        Bạn là Trợ lý AI Phân tích Dữ liệu (Senior BI Copilot) cấp cao của hệ thống Olist E-commerce.
+        
+        [DỮ LIỆU ĐANG HIỂN THỊ TRÊN MÀN HÌNH ({current_time_range}) - Đơn vị: {user_currency}]
+        - Tổng doanh thu: {ai_total_rev:,.0f} {symbol}
+        - Tổng đơn hàng: {summary.get('total_orders', 0):,.0f} đơn
+        - AOV (Giá trị trung bình đơn): {ai_aov:,.0f} {symbol}
+        - Top sản phẩm bán chạy: {prod_text}
+        
+        [THIẾT LUẬT GIAO TIẾP TỐI THƯỢNG - PHẢI TUÂN THỦ 100%]
+        1. NẾU sếp ra lệnh LỌC/TÌM KIẾM/ĐỔI THỜI GIAN (VD: "Lọc quý 2", "Cho xem dữ liệu năm 2018", "Vẽ lại toàn bộ dashboard"): BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC ĐỌC SỐ LIỆU BÊN TRÊN CHO SẾP. Vì lúc này dữ liệu chưa kịp cập nhật. Bạn CHỈ ĐƯỢC trả lời: "Tôi đã cập nhật bảng điều khiển theo yêu cầu, sếp xem số liệu mới nhất trực tiếp trên màn hình nhé!".
+        2. NẾU sếp CHỈ HỎI số liệu hiện tại (VD: "Doanh thu đang là bao nhiêu?"): Bạn mới được phép dùng [DỮ LIỆU ĐANG HIỂN THỊ...] để phân tích. KHÔNG BAO GIỜ bịa đặt số liệu.
+        3. Xưng "tôi", gọi người dùng là "sếp". Trong câu trả lời luôn cố gắng đưa ra 1 "Insight" (nhận xét).
+        
+        [HƯỚNG DẪN XỬ LÝ LỆNH TỪ SẾP]
+        1. Lệnh LỌC/VẼ LẠI DASHBOARD -> intent = "update_filter".
+        2. Lệnh SO SÁNH (VD: "So sánh Q1 và Q2 năm 2018") -> intent = "compare". Tự bóc tách 2 khoảng thời gian start/end và compare_start/compare_end.
+        3. Lệnh VẼ BIỂU ĐỒ MỚI (Vào Widget) -> intent = "draw_chart".
+        4. Thời gian: Dịch ra định dạng YYYY-MM-DD (VD: "Quý 1 năm 2017" -> start_date: "2017-01-01", end_date: "2017-03-31").
+        
+        NHIỆM VỤ: Phân tích câu hỏi và TRẢ VỀ DUY NHẤT 1 CHUỖI JSON CHUẨN (Tuyệt đối không bọc bằng markdown):
+        {{
+            "intent": "chat" | "draw_chart" | "export_pdf" | "update_filter" | "compare",
+            "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
+            "compare_start": "YYYY-MM-DD", "compare_end": "YYYY-MM-DD",
+            "category": "Tên danh mục (nếu không có để null)",
+            "metric": "revenue" | "orders",
+            "reply": "Câu trả lời tuân thủ đúng THIẾT LUẬT TỐI THƯỢNG ở trên."
+        }}
+        """
+        
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        payload = {"model": "llama-3.1-8b-instant", "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": req.message}], "response_format": {"type": "json_object"}, "temperature": 0.1}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {key_to_use}", "User-Agent": "Mozilla/5.0"}
+        req_obj = urllib.request.Request(url, data=json.dumps(payload).encode('utf-8'), headers=headers)
+        
+        with urllib.request.urlopen(req_obj) as response:
+            result = json.loads(response.read().decode())
+            ai_json = json.loads(result["choices"][0]["message"]["content"])
+            
+            intent = ai_json.get("intent", "chat")
+            reply_text = ai_json.get("reply", "Đã rõ thưa sếp.")
+            start_d = ai_json.get("start_date")
+            end_d = ai_json.get("end_date")
+            category = ai_json.get("category")
+            metric = ai_json.get("metric", "revenue")
+
+            # 3. PHÂN PHỐI HÀNH ĐỘNG
+            if intent == "export_pdf":
+                return {
+                    "reply": "Sếp muốn xuất file PDF cho biểu đồ vừa vẽ, hay xuất toàn bộ màn hình Dashboard ạ?",
+                    "action": "ASK_PDF_OPTIONS"
+                }
+                
+            elif intent == "update_filter":
+                return {"reply": reply_text, "action": "UPDATE_FILTER", "filters": {"startDate": start_d, "endDate": end_d, "category": ai_json.get("category")}}
+                
+            # 🔥 Ý TƯỞNG 1: LOGIC SO SÁNH 2 GIAI ĐOẠN (BAR CHART) 🔥
+            elif intent == "compare":
+                comp_start = ai_json.get("compare_start")
+                comp_end = ai_json.get("compare_end")
+                p1_data = get_summary(start_date=start_d, end_date=end_d, category=ai_json.get("category"))
+                p2_data = get_summary(start_date=comp_start, end_date=comp_end, category=ai_json.get("category"))
+
+                v1 = (p1_data.get('total_revenue', 0) * rate) if metric == "revenue" else p1_data.get('total_orders', 0)
+                v2 = (p2_data.get('total_revenue', 0) * rate) if metric == "revenue" else p2_data.get('total_orders', 0)
+                l1 = f"{start_d} đến {end_d}" if start_d else "Giai đoạn 1"
+                l2 = f"{comp_start} đến {comp_end}" if comp_start else "Giai đoạn 2"
+                lbl_metric = f"Doanh thu ({symbol})" if metric == "revenue" else "Số đơn hàng"
+
+                chart_html = f"""
+                <!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script></head>
+                <body style="background:transparent; padding:15px; font-family:sans-serif; display:flex; flex-direction:column; height:100vh; box-sizing:border-box;">
+                    <h3 style="color:#334155; margin-top:0;">📊 Phân tích So sánh: {lbl_metric}</h3>
+                    <div style="flex:1; position:relative;"><canvas id="myChart"></canvas></div>
+                    <div style="margin-top:15px; padding:12px; background:#f8fafc; border-left:4px solid #10b981; border-radius:4px;">
+                        <strong style="color:#10b981; font-size:13px;">🤖 AI Phân tích:</strong>
+                        <p style="margin:5px 0 0 0; font-size:13px; line-height:1.4;">{reply_text}</p>
+                    </div>
+                    <script>
+                        new Chart(document.getElementById('myChart'), {{
+                            type: 'bar',
+                            data: {{ labels: ['{l1}', '{l2}'], datasets: [{{ label: '{lbl_metric}', data: [{v1}, {v2}], backgroundColor: ['rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)'], borderRadius: 6 }}] }},
+                            options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }} }}
+                        }});
+                    </script>
+                </body></html>
+                """
+                return {"reply": "Tôi đã tạo xong bảng so sánh. Sếp xem trên màn hình nhé!", "action": "OPEN_CHART", "html": chart_html}
+            
+            elif intent == "draw_chart":
+                daily_data = get_daily_revenue(start_date=start_d, end_date=end_d)
+                if not daily_data or len(daily_data) < 2:
+                    daily_data = get_daily_revenue()[-30:]
+                    
+                labels = [d['date'] for d in daily_data]
+
+                if metric == "orders":
+                    values = [d['orders'] for d in daily_data]
+                    label_text = "Số lượng đơn hàng"
+                    chart_title = f"Biểu đồ Đơn Hàng {f'({start_d} đến {end_d})' if start_d else ''}"
+                    color = "rgba(16, 185, 129, 1)" 
+                    bg_color = "rgba(16, 185, 129, 0.2)"
+                else:
+                    values = [round(d['revenue'] * rate, 2) for d in daily_data]
+                    label_text = f"Doanh thu ({symbol})"
+                    chart_title = f"Biểu đồ Doanh Thu {f'({start_d} đến {end_d})' if start_d else ''}"
+                    color = "rgba(147, 51, 234, 1)" 
+                    bg_color = "rgba(147, 51, 234, 0.2)"
+                
+                import urllib.parse
+                csv_header = f"Ngày;{label_text}"
+                csv_rows = [f"{l};{v}" for l, v in zip(labels, values)]
+                csv_content = csv_header + "\n" + "\n".join(csv_rows)
+                csv_data_uri = "data:text/csv;charset=utf-8,%EF%BB%BF" + urllib.parse.quote(csv_content)
+                
+                chart_html = f"""
+                <!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+                <style>
+                    .export-btn {{ padding: 4px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; color: white; margin-left: 5px; transition: opacity 0.2s; text-decoration: none; display: inline-block; }}
+                    .export-btn:hover {{ opacity: 0.8; }}
+                    .btn-png {{ background-color: #3b82f6; }}
+                    .btn-csv {{ background-color: #10b981; }}
+                </style>
+                </head>
+                <body style="background:transparent; margin:0; padding:15px; font-family:sans-serif; display:flex; flex-direction:column; height:100vh; box-sizing:border-box;">
+                    
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
+                        <h3 style="color:#334155; margin:0; font-size:15px;">{chart_title}</h3>
+                        <div>
+                            <button class="export-btn btn-png" onclick="downloadPNG()">📸 Tải Ảnh</button>
+                            <a href="{csv_data_uri}" download="AI_Data_Export.csv" class="export-btn btn-csv">📊 Tải Excel</a>
+                        </div>
+                    </div>
+
+                    <div style="flex:1; min-height:0; position:relative; background: white; border-radius: 8px; padding: 5px;"><canvas id="myChart"></canvas></div>
+                    
+                    <div style="margin-top:15px; padding:12px; background:#f8fafc; border-left:4px solid {color}; border-radius:4px;">
+                        <strong style="color:{color}; font-size:13px;">🤖 AI Phân tích:</strong>
+                        <p style="margin:5px 0 0 0; color:#334155; font-size:13px; line-height:1.4;">{reply_text}</p>
+                    </div>
+                    
+                    <script>
+                        const ctx = document.getElementById('myChart');
+                        const chart = new Chart(ctx, {{
+                            type: 'line',
+                            data: {{ labels: {labels}, datasets: [{{ label: '{label_text}', data: {values}, borderColor: '{color}', backgroundColor: '{bg_color}', fill: true, tension: 0.4 }}] }},
+                            options: {{ responsive: true, maintainAspectRatio: false }}
+                        }});
+
+                        function downloadPNG() {{
+                            const link = document.createElement('a');
+                            link.download = 'AI_Chart.png';
+                            link.href = chart.toBase64Image();
+                            link.click();
+                        }}
+                    </script>
+                </body></html>
+                """
+                return {"reply": f"Tôi đã vẽ xong. Sếp có thể bấm nút Tải Ảnh hoặc Tải Excel (CSV) ngay trên góc phải của biểu đồ nhé!", "action": "OPEN_CHART", "html": chart_html}
+
+            else:
+                return {"reply": reply_text.replace("**", ""), "action": "NONE"}
+                
+    except Exception as e:
+        return {"reply": f"Lỗi xử lý ngôn ngữ tự nhiên: {str(e)}", "action": "NONE"}
+
+# Biến ứng dụng FastAPI thành chuẩn WSGI để deploy Cloud dễ dàng
 wsgi_app = ASGIMiddleware(app)

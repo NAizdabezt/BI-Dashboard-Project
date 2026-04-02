@@ -60,7 +60,7 @@ export function AIChatbot() {
     setIsTyping(true);
 
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com";
       const userCurrency = localStorage.getItem("currency") || localStorage.getItem("selectedCurrency") || "BRL";
       const fmtDate = (d: Date | undefined) => d ? new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().split('T')[0] : null;
       const res = await fetch(`${baseUrl}/api/chat`, {

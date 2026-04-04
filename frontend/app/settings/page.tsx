@@ -18,7 +18,6 @@ export default function SettingsPage() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncSuccess, setSyncSuccess] = useState(false)
 
-  // 👇 2. ĐÃ THÊM: State để lưu Gemini API Key 👇
   const [apiKey, setApiKey] = useState("")
 
   useEffect(() => {
@@ -27,7 +26,7 @@ export default function SettingsPage() {
     if (savedAov) setAovTarget(Number(savedAov))
 
     // 👇 3. ĐÃ THÊM: Tải API Key từ LocalStorage lên khi mở trang 👇
-    const savedKey = localStorage.getItem("GEMINI_API_KEY")
+    const savedKey = localStorage.getItem("GROQ_API_KEY")
     if (savedKey) setApiKey(savedKey)
   }, [])
 
@@ -38,8 +37,8 @@ export default function SettingsPage() {
 
   // 👇 4. ĐÃ THÊM: Hàm lưu API Key vào trình duyệt 👇
   const handleSaveKey = () => {
-    localStorage.setItem("GEMINI_API_KEY", apiKey)
-    alert("Đã lưu API Key thành công! Trợ lý AI đã sẵn sàng hoạt động.")
+    localStorage.setItem("GROQ_API_KEY", apiKey);
+    alert("Đã lưu khóa API thành công!");
   }
 
   const handleSyncData = async () => {
@@ -172,7 +171,7 @@ export default function SettingsPage() {
                 <CardTitle className="text-lg font-bold flex items-center gap-2">
                   <Key className="h-5 w-5 text-amber-500" /> Cấu hình Trợ lý AI
                 </CardTitle>
-                <CardDescription>Nhập khóa Gemini API để kích hoạt Chatbot Copilot.</CardDescription>
+                <CardDescription>Nhập khóa Groq API để kích hoạt Chatbot Copilot.</CardDescription>
               </CardHeader>
               <CardContent className="p-5 space-y-4">
                 <p className="text-xs text-slate-500 leading-relaxed">
@@ -183,7 +182,7 @@ export default function SettingsPage() {
                     type="password" 
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
-                    placeholder="Dán Google Gemini API Key vào đây..."
+                    placeholder="Dán Groq API Key vào đây..."
                     className="w-full px-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 text-sm"
                   />
                   <button 

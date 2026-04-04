@@ -32,6 +32,25 @@ export function AIChatbot() {
     dragRef.current = { startX: e.clientX, startY: e.clientY, initX: chartPos.x, initY: chartPos.y }
   }
 
+  // HÀM BIẾN DẤU ** THÀNH CHỮ IN ĐẬM VÀ XỬ LÝ XUỐNG DÒNG
+  const formatText = (text: string) => {
+    if (!text) return null;
+    return text.split('\n').map((line, lineIndex) => (
+      <span key={lineIndex}>
+        {line.split(/\*\*(.*?)\*\*/g).map((part, index) => 
+          index % 2 === 1 ? (
+            <strong key={index} className="font-extrabold opacity-100">
+              {part}
+            </strong>
+          ) : (
+            <span key={index} className="opacity-90">{part}</span>
+          )
+        )}
+        <br />
+      </span>
+    ));
+  };
+
   useEffect(() => {
     if (!isDragging) return;
     const onMouseMove = (e: MouseEvent) => {
@@ -42,7 +61,6 @@ export function AIChatbot() {
     return () => { window.removeEventListener('mousemove', onMouseMove); window.removeEventListener('mouseup', onMouseUp) }
   }, [isDragging])
 
-  // 🔥 BƯỚC 2: Thêm cờ isSilent vào hàm handleSend 🔥
   const handleSend = async (textOverride?: string, isSilent: boolean = false) => {
     const userMsg = textOverride || input;
     if (!userMsg.trim()) return;
@@ -160,14 +178,12 @@ export function AIChatbot() {
     setIsTyping(false);
   }
 
-  // 🔥 GIẢI PHÁP XUẤT PDF NGUYÊN BẢN CỦA TRÌNH DUYỆT (NATIVE PRINT) 🔥
+  // GIẢI PHÁP XUẤT PDF NGUYÊN BẢN CỦA TRÌNH DUYỆT (NATIVE PRINT)
   const exportToPDF = (mode: 'WIDGET' | 'DASHBOARD') => {
     return new Promise<void>((resolve) => {
-      // Tạo một thẻ Style tạm thời để "định hình" lại giao diện khi in
       const printStyle = document.createElement('style');
       
       if (mode === 'WIDGET') {
-        // NẾU XUẤT WIDGET: Ẩn mọi thứ, chỉ phóng to khu vực chứa biểu đồ AI
         printStyle.innerHTML = `
           @media print {
             body * { visibility: hidden !important; }
@@ -182,22 +198,16 @@ export function AIChatbot() {
               display: block !important;
               background: white !important;
             }
-            /* Ẩn các nút rườm rà */
             button, .export-btn { display: none !important; }
-            /* Cấm biểu đồ bị cắt ngang giữa 2 trang giấy */
             iframe, canvas { page-break-inside: avoid !important; margin-bottom: 20px !important; }
           }
         `;
       } else {
-        // NẾU XUẤT TOÀN DASHBOARD: Ẩn thanh Sidebar, thanh Menu trên và Khung chat
         printStyle.innerHTML = `
           @media print {
-            /* Ẩn các thành phần điều hướng */
             aside, header, nav, .fixed.bottom-6, button.fixed, .z-50 { display: none !important; }
-            /* Ép thẻ chính full chiều rộng giấy */
             main, .p-8 { width: 100% !important; margin: 0 !important; padding: 0 !important; }
             body { background: white !important; }
-            /* Cấm cắt đôi biểu đồ */
             .recharts-wrapper, canvas, .card { page-break-inside: avoid !important; }
           }
         `;
@@ -205,11 +215,8 @@ export function AIChatbot() {
 
       document.head.appendChild(printStyle);
       
-      // Chờ 0.5s để CSS kịp ăn vào trình duyệt, sau đó gọi lệnh Print
       setTimeout(() => {
         window.print();
-        
-        // Sau khi sếp tắt hộp thoại in, dọn dẹp CSS trả web về nguyên trạng
         document.head.removeChild(printStyle);
         resolve();
       }, 500);
@@ -253,11 +260,13 @@ export function AIChatbot() {
           </div>
 
           <div className="h-[400px] p-4 overflow-y-auto flex flex-col gap-4 bg-slate-50 dark:bg-slate-950">
-            {/* 🔥 BƯỚC 3: Ẩn các tin nhắn có cờ isSilent 🔥 */}
             {messages.map((m, i) => !m.isSilent && (
               <div key={i} className={`flex flex-col ${m.role === 'user' ? 'items-end' : 'items-start'}`}>
                 <div className={`p-3 rounded-2xl max-w-[85%] text-sm ${m.role === 'user' ? 'bg-purple-600 text-white rounded-tr-none' : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-tl-none shadow-sm'}`}>
-                  {m.text}
+                  
+                  {/* 🔥 ĐÃ SỬA Ở ĐÂY: Dùng hàm formatText thay vì {m.text} 🔥 */}
+                  {formatText(m.text)}
+                  
                 </div>
                 {m.options && (
                   <div className="flex flex-col gap-2 mt-2 w-[85%]">
@@ -280,7 +289,6 @@ export function AIChatbot() {
           </div>
 
           <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex gap-2 items-center">
-            {/* 🔥 BƯỚC 4: Nút Micro xịn xò 🎙️ 🔥 */}
             <button 
               onClick={toggleMic} 
               className={`p-2 rounded-full transition-colors ${isListening ? 'bg-rose-500 text-white animate-pulse' : 'bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-purple-600'}`}

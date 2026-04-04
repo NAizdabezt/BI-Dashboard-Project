@@ -657,6 +657,25 @@ async def chat_with_ai(req: ChatMessage):
         ai_aov = summary.get('aov', 0) * rate
         current_time_range = f"Từ {req.start_date} đến {req.end_date}" if req.start_date else "Toàn thời gian"
         
+        # 🔥 ĐOẠN THÊM MỚI 1: LẤY VÀ DỊCH DỮ LIỆU RFM CHO AI HIỂU 🔥
+        rfm_text = "Chưa có dữ liệu"
+        try:
+            rfm_data = get_rfm_segments() # Gọi hàm RFM sếp đã định nghĩa
+            if rfm_data:
+                rfm_lines = []
+                for item in rfm_data:
+                    # Ép kiểu an toàn (trường hợp trả về list of dicts)
+                    seg_name = item.get('segment') if isinstance(item, dict) else getattr(item, 'segment', '')
+                    count = item.get('customer_count') if isinstance(item, dict) else getattr(item, 'customer_count', 0)
+                    rev = item.get('total_revenue') if isinstance(item, dict) else getattr(item, 'total_revenue', 0)
+                    
+                    rev_converted = rev * rate
+                    rfm_lines.append(f"Nhóm '{seg_name}': {count:,} người (Doanh thu: {rev_converted:,.0f} {symbol})")
+                rfm_text = " | ".join(rfm_lines)
+        except Exception as e:
+            pass
+        # 🔥 KẾT THÚC ĐOẠN THÊM MỚI 1 🔥
+
         # 🔥 Ý TƯỞNG 2: BÁO CÁO NHANH TỰ ĐỘNG KHỞI TẠO (SILENT ALERT) 🔥
         if req.message == "[INIT_ALERT]":
             return {
@@ -664,7 +683,7 @@ async def chat_with_ai(req: ChatMessage):
                 "action": "NONE"
             }
 
-        # 2. NÃO BỘ AI (SYSTEM PROMPT)
+        # 2. NÃO BỘ AI (SYSTEM PROMPT) - Đã chèn thêm dòng RFM, KHÔNG xóa bất cứ dòng nào cũ
         system_prompt = f"""
         Bạn là Trợ lý AI Phân tích Dữ liệu (Senior BI Copilot) cấp cao của hệ thống Olist E-commerce.
         
@@ -673,10 +692,11 @@ async def chat_with_ai(req: ChatMessage):
         - Tổng đơn hàng: {summary.get('total_orders', 0):,.0f} đơn
         - AOV (Giá trị trung bình đơn): {ai_aov:,.0f} {symbol}
         - Top sản phẩm bán chạy: {prod_text}
+        - Dữ liệu khách hàng (RFM): {rfm_text}
         
         [THIẾT LUẬT GIAO TIẾP TỐI THƯỢNG - PHẢI TUÂN THỦ 100%]
         1. NẾU sếp ra lệnh LỌC/TÌM KIẾM/ĐỔI THỜI GIAN (VD: "Lọc quý 2", "Cho xem dữ liệu năm 2018", "Vẽ lại toàn bộ dashboard"): BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC ĐỌC SỐ LIỆU BÊN TRÊN CHO SẾP. Vì lúc này dữ liệu chưa kịp cập nhật. Bạn CHỈ ĐƯỢC trả lời: "Tôi đã cập nhật bảng điều khiển theo yêu cầu, sếp xem số liệu mới nhất trực tiếp trên màn hình nhé!".
-        2. NẾU sếp CHỈ HỎI số liệu hiện tại (VD: "Doanh thu đang là bao nhiêu?"): Bạn mới được phép dùng [DỮ LIỆU ĐANG HIỂN THỊ...] để phân tích. KHÔNG BAO GIỜ bịa đặt số liệu.
+        2. NẾU sếp CHỈ HỎI số liệu hiện tại (VD: "Doanh thu đang là bao nhiêu?", "Có bao nhiêu khách VIP?"): Bạn mới được phép dùng [DỮ LIỆU ĐANG HIỂN THỊ...] để phân tích. KHÔNG BAO GIỜ bịa đặt số liệu.
         3. Xưng "tôi", gọi người dùng là "sếp". Trong câu trả lời luôn cố gắng đưa ra 1 "Insight" (nhận xét).
         
         [HƯỚNG DẪN XỬ LÝ LỆNH TỪ SẾP]

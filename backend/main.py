@@ -83,24 +83,40 @@ async def startup_event():
 # PHẦN 1: CÁC API PHÂN TÍCH SIÊU TỐC BẰNG CLICKHOUSE
 # =========================================================
 
+@app.get("/api/health")
+def health_check():
+    try:
+        client = get_ch_client()
+        client.command("SELECT 1")
+        rows = client.query("SELECT count() FROM olist_flat_analytics").result_rows
+        return {"status": "ok", "clickhouse": "connected", "rows": rows[0][0]}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
 @app.get("/api/summary", response_model=SummaryData)
 def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    client = get_ch_client()
+    try:
+        client = get_ch_client()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"CH connection failed: {str(e)}")
     where_clause = build_where(start_date, end_date, category)
     
-    query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where_clause}"
-    res_total = client.query(query_total).result_rows[0]
-    total_rev = float(res_total[0] or 0)
-    total_ord = int(res_total[1] or 0)
-    aov = total_rev / total_ord if total_ord > 0 else 0
+    try:
+        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where_clause}"
+        res_total = client.query(query_total).result_rows[0]
+        total_rev = float(res_total[0] or 0)
+        total_ord = int(res_total[1] or 0)
+        aov = total_rev / total_ord if total_ord > 0 else 0
 
-    query_growth = f"SELECT toYYYYMM(order_purchase_timestamp) as m, sum(payment_value) FROM olist_flat_analytics {where_clause} GROUP BY m ORDER BY m"
-    res_growth = client.query(query_growth).result_rows
-    growth_rate = 0.0
-    if len(res_growth) >= 2:
-        growth_rate = ((float(res_growth[-1][1]) - float(res_growth[-2][1])) / float(res_growth[-2][1])) * 100
+        query_growth = f"SELECT toYYYYMM(order_purchase_timestamp) as m, sum(payment_value) FROM olist_flat_analytics {where_clause} GROUP BY m ORDER BY m"
+        res_growth = client.query(query_growth).result_rows
+        growth_rate = 0.0
+        if len(res_growth) >= 2:
+            growth_rate = ((float(res_growth[-1][1]) - float(res_growth[-2][1])) / float(res_growth[-2][1])) * 100
 
-    return {"total_revenue": round(total_rev, 2), "total_orders": total_ord, "growth_rate": round(growth_rate, 2), "aov": round(aov, 2)}
+        return {"total_revenue": round(total_rev, 2), "total_orders": total_ord, "growth_rate": round(growth_rate, 2), "aov": round(aov, 2)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
 
 @app.get("/api/revenue/daily", response_model=List[RevenueItem])
 def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):

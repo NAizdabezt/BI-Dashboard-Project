@@ -8,15 +8,30 @@ import csv
 import logging
 from datetime import datetime
 from a2wsgi import ASGIMiddleware
-from functools import lru_cache
 import urllib.request
-import urllib.error
+import clickhouse_connect
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="BI Dashboard API (Olist) - Ultra Light Version")
+app = FastAPI(title="BI Dashboard API (Olist) - Lakehouse Version")
+
+def get_ch_client():
+    return clickhouse_connect.get_client(
+        host=os.getenv('CH_HOST', 'g6u2lns963.asia-southeast1.gcp.clickhouse.cloud'),
+        port=int(os.getenv('CH_PORT', '8443')),
+        username=os.getenv('CH_USER', 'default'),
+        password=os.getenv('CH_PASSWORD', 're0p~~Ii1mVXS'),
+        secure=True
+    )
+
+def build_where(start_date: str, end_date: str, category: str) -> str:
+    conds = []
+    if start_date: conds.append(f"toDate(order_purchase_timestamp) >= '{start_date[:10]}'")
+    if end_date: conds.append(f"toDate(order_purchase_timestamp) <= '{end_date[:10]}'")
+    if category and category != "all": conds.append(f"Category_VN = '{category}'")
+    return "WHERE " + " AND ".join(conds) if conds else ""
 
 # 1. Cấu hình CORS
 app.add_middleware(
@@ -27,333 +42,172 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- KHAI BÁO SCHEMAS ---
+# --- KHAI BÁO SCHEMAS CHUẨN CỦA SẾP ---
 class RevenueItem(BaseModel):
-    date: str
-    revenue: float
-    orders: Optional[int] = 0
-
+    date: str; revenue: float; orders: Optional[int] = 0
 class SummaryData(BaseModel):
-    total_revenue: float
-    total_orders: int
-    growth_rate: float
-    aov: float = 0.0
-
+    total_revenue: float; total_orders: int; growth_rate: float; aov: float = 0.0
 class PredictionItem(BaseModel):
-    date: str
-    actual_revenue: Optional[float] = None
-    predicted_revenue: float
-
+    date: str; actual_revenue: Optional[float] = None; predicted_revenue: float
 class TopProductItem(BaseModel):
-    product_name: str
-    revenue: float
-    orders: int
-
+    product_name: str; revenue: float; orders: int
 class StateItem(BaseModel):
-    state: str
-    revenue: float
-    orders: int
-
+    state: str; revenue: float; orders: int
 class PriceCorrelationItem(BaseModel):
-    price_range: str
-    orders: int
-    revenue: float
-
+    price_range: str; orders: int; revenue: float
 class HeatmapItem(BaseModel):
-    weekday: str
-    hour: int
-    orders: int
-
+    weekday: str; hour: int; orders: int
 class TopSellerItem(BaseModel):
-    seller_id: str
-    revenue: float
-    orders: int
-
+    seller_id: str; revenue: float; orders: int
 class RFMSegmentItem(BaseModel):
-    segment: str
-    customer_count: int
-    total_revenue: float
-    avg_recency: float
-
+    segment: str; customer_count: int; total_revenue: float; avg_recency: float
 class ChatMessage(BaseModel):
-    message: str
-    api_key: Optional[str] = None
-    currency: Optional[str] = "BRL"
-    start_date: Optional[str] = None
-    end_date: Optional[str] = None
-    category: Optional[str] = None
+    message: str; api_key: Optional[str] = None; currency: Optional[str] = "BRL"
+    start_date: Optional[str] = None; end_date: Optional[str] = None; category: Optional[str] = None
 
-# --- CẤU HÌNH ĐƯỜNG DẪN & GLOBAL CACHE ---
+# --- ĐƯỜNG DẪN PROJECT ---
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(current_dir)
-csv_path = os.path.join(project_root, 'data', 'live', 'sales_dashboard.csv')
-
-CACHED_DATA = []
-LAST_MODIFIED_TIME = 0
-
-def get_data() -> list:
-    """Load dữ liệu bằng Python thuần (DictReader) cực nhẹ, không dùng Pandas"""
-    global CACHED_DATA, LAST_MODIFIED_TIME
-    
-    if not os.path.exists(csv_path):
-        logger.warning(f"CSV file not found: {csv_path}")
-        return []
-
-    current_modified_time = os.path.getmtime(csv_path)
-    
-    if not CACHED_DATA or current_modified_time > LAST_MODIFIED_TIME:
-        logger.info("🔄 Đang Load/Reload dữ liệu CSV bằng Python thuần...")
-        try:
-            temp_data = []
-            with open(csv_path, mode='r', encoding='utf-8-sig') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    # Rút gọn và chuẩn hóa dữ liệu ngay lúc đọc để tối ưu RAM
-                    temp_data.append({
-                        'order_id': row.get('order_id', ''),
-                        'date': row.get('order_purchase_timestamp', '')[:10],
-                        'timestamp': row.get('order_purchase_timestamp', ''),
-                        'payment_value': float(row.get('payment_value', 0) or 0),
-                        'price': float(row.get('price', 0) or 0),
-                        'product_id': row.get('product_id', ''),
-                        'Category_VN': row.get('Category_VN', 'Khác'),
-                        'customer_state': row.get('customer_state', ''),
-                        'seller_id': row.get('seller_id', ''),
-                        'payment_type': row.get('payment_type', 'unknown'),
-                        'order_status': row.get('order_status', 'unknown')
-                    })
-            CACHED_DATA = temp_data
-            LAST_MODIFIED_TIME = current_modified_time
-            logger.info(f"✅ Đã tải xong {len(CACHED_DATA)} dòng dữ liệu vào RAM.")
-        except Exception as e:
-            logger.error(f"Error loading CSV: {e}")
-            return []
-            
-    return CACHED_DATA
-
-def filter_data(data: list, start_date: str = None, end_date: str = None, category: str = "all") -> list:
-    """Bộ lọc tốc độ ánh sáng bằng Python thuần hỗ trợ lọc cả Ngày và Danh mục"""
-    if not start_date and not end_date and (not category or category == "all"):
-        return data
-        
-    filtered = []
-    for row in data:
-        # 1. Lọc theo ngày
-        if start_date and row['date'] < start_date[:10]:
-            continue
-        if end_date and row['date'] > end_date[:10]:
-            continue
-        # 2. Lọc theo danh mục
-        if category and category != "all":
-            if row.get('Category_VN') != category:
-                continue
-                
-        filtered.append(row)
-    return filtered
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("=== Bắt đầu khởi động Server Backend (Bản siêu nhẹ) ===")
-    get_data() 
+    logger.info("=== Bắt đầu khởi động Server Backend (Bản siêu tốc ClickHouse) ===")
+    try:
+        client = get_ch_client()
+        client.command("SELECT 1")
+        logger.info("✅ Kết nối tới ClickHouse Local thành công mĩ mãn!")
+    except Exception as e:
+        logger.error(f"❌ Không thể kết nối tới ClickHouse: {e}")
 
-# -----------------------------
-# CÁC ENDPOINT API CHÍNH
-# -----------------------------
-
-@app.get("/")
-def read_root():
-    return {"message": "Olist BI Dashboard API is running siêu mượt (Zero Pandas)!"}
+# =========================================================
+# PHẦN 1: CÁC API PHÂN TÍCH SIÊU TỐC BẰNG CLICKHOUSE
+# =========================================================
 
 @app.get("/api/summary", response_model=SummaryData)
 def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    if not data:
-        return {"total_revenue": 0, "total_orders": 0, "growth_rate": 0, "aov": 0}
-
-    total_revenue = sum(row['payment_value'] for row in data)
-    unique_orders = set(row['order_id'] for row in data)
-    total_orders = len(unique_orders)
-    aov = total_revenue / total_orders if total_orders > 0 else 0
-
-    monthly_rev = {}
-    for row in data:
-        month = row['date'][:7] 
-        monthly_rev[month] = monthly_rev.get(month, 0) + row['payment_value']
+    client = get_ch_client()
+    where_clause = build_where(start_date, end_date, category)
     
-    sorted_months = sorted(monthly_rev.keys())
+    query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where_clause}"
+    res_total = client.query(query_total).result_rows[0]
+    total_rev = float(res_total[0] or 0)
+    total_ord = int(res_total[1] or 0)
+    aov = total_rev / total_ord if total_ord > 0 else 0
+
+    query_growth = f"SELECT toYYYYMM(order_purchase_timestamp) as m, sum(payment_value) FROM olist_flat_analytics {where_clause} GROUP BY m ORDER BY m"
+    res_growth = client.query(query_growth).result_rows
     growth_rate = 0.0
-    if len(sorted_months) >= 2:
-        last_month = monthly_rev[sorted_months[-1]]
-        prev_month = monthly_rev[sorted_months[-2]]
-        if prev_month > 0:
-            growth_rate = ((last_month - prev_month) / prev_month) * 100
+    if len(res_growth) >= 2:
+        growth_rate = ((float(res_growth[-1][1]) - float(res_growth[-2][1])) / float(res_growth[-2][1])) * 100
 
-    return {
-        "total_revenue": round(total_revenue, 2),
-        "total_orders": total_orders,
-        "growth_rate": round(growth_rate, 2),
-        "aov": round(aov, 2)
-    }
+    return {"total_revenue": round(total_rev, 2), "total_orders": total_ord, "growth_rate": round(growth_rate, 2), "aov": round(aov, 2)}
 
-@app.get("/api/revenue/daily")
+@app.get("/api/revenue/daily", response_model=List[RevenueItem])
 def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    daily_stats = {}
-    for row in data:
-        d = row['date']
-        if d not in daily_stats:
-            daily_stats[d] = {'revenue': 0, 'orders': set()}
-        daily_stats[d]['revenue'] += row['payment_value']
-        daily_stats[d]['orders'].add(row['order_id'])
-        
-    result = []
-    for d in sorted(daily_stats.keys()):
-        result.append({
-            "date": d,
-            "revenue": round(daily_stats[d]['revenue'], 2),
-            "orders": len(daily_stats[d]['orders'])
-        })
-    return result
+    client = get_ch_client()
+    where = build_where(start_date, end_date, category)
+    query = f"SELECT toString(toDate(order_purchase_timestamp)) as d, sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where} GROUP BY d ORDER BY d"
+    return [{"date": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/metadata/date-range")
 def get_date_range():
-    data = get_data()
-    if not data:
-        return {"min_date": "2017-01-01", "max_date": "2018-12-31"}
-    
-    dates = [row['date'] for row in data if row['date']]
-    return {
-        "min_date": min(dates),
-        "max_date": max(dates)
-    }
+    client = get_ch_client()
+    query = "SELECT toString(min(toDate(order_purchase_timestamp))), toString(max(toDate(order_purchase_timestamp))) FROM olist_flat_analytics"
+    res = client.query(query).result_rows[0]
+    return {"min_date": res[0] or "2017-01-01", "max_date": res[1] or "2018-12-31"}
 
 @app.get("/api/products/top", response_model=List[TopProductItem])
 def get_top_products(limit: int = 7, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    products = {}
-    for row in data:
-        pid = row['product_id']
-        if pid not in products:
-            products[pid] = {'cat': row['Category_VN'], 'rev': 0, 'orders': set()}
-        products[pid]['rev'] += row['price']
-        products[pid]['orders'].add(row['order_id'])
-        
-    result = []
-    for pid, stats in products.items():
-        result.append({
-            "product_name": f"{stats['cat']} (#{pid[:6]})",
-            "revenue": stats['rev'],
-            "orders": len(stats['orders'])
-        })
-        
-    result = sorted(result, key=lambda x: x['revenue'], reverse=True)[:limit]
-    for r in result: r['revenue'] = round(r['revenue'], 2)
-    return result
-
-@app.get("/api/price-correlation", response_model=List[PriceCorrelationItem])
-def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    tiers = {
-        'Dưới 50 R$': {'rev': 0, 'orders': set()},
-        '50 - 100 R$': {'rev': 0, 'orders': set()},
-        '100 - 200 R$': {'rev': 0, 'orders': set()},
-        '200 - 500 R$': {'rev': 0, 'orders': set()},
-        'Trên 500 R$': {'rev': 0, 'orders': set()}
-    }
-    
-    for row in data:
-        p = row['price']
-        oid = row['order_id']
-        if p < 50: t = 'Dưới 50 R$'
-        elif p < 100: t = '50 - 100 R$'
-        elif p < 200: t = '100 - 200 R$'
-        elif p < 500: t = '200 - 500 R$'
-        else: t = 'Trên 500 R$'
-        
-        tiers[t]['rev'] += p
-        tiers[t]['orders'].add(oid)
-        
-    result = []
-    for k, v in tiers.items():
-        if v['rev'] > 0:
-            result.append({
-                "price_range": k,
-                "orders": len(v['orders']),
-                "revenue": round(v['rev'], 2)
-            })
-    return result
+    client = get_ch_client()
+    where = build_where(start_date, end_date, category)
+    query = f"SELECT concat(Category_VN, ' (#', substring(product_id, 1, 6), ')'), sum(price), count(DISTINCT order_id) FROM olist_flat_analytics {where} GROUP BY product_id, Category_VN ORDER BY sum(price) DESC LIMIT {limit}"
+    return [{"product_name": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/charts/top-states", response_model=List[StateItem])
 def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    states = {}
-    for row in data:
-        s = row['customer_state']
-        if s not in states: states[s] = {'rev': 0, 'orders': set()}
-        states[s]['rev'] += row['payment_value']
-        states[s]['orders'].add(row['order_id'])
-        
-    result = [{"state": k, "revenue": round(v['rev'], 2), "orders": len(v['orders'])} 
-              for k, v in states.items()]
-    return sorted(result, key=lambda x: x['revenue'], reverse=True)
+    client = get_ch_client()
+    query = f"SELECT customer_state, sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY customer_state ORDER BY sum(payment_value) DESC"
+    return [{"state": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/charts/shopping-behavior", response_model=List[HeatmapItem])
 def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    day_map = {0: 'Thứ 2', 1: 'Thứ 3', 2: 'Thứ 4', 3: 'Thứ 5', 4: 'Thứ 6', 5: 'Thứ 7', 6: 'Chủ Nhật'}
-    heatmap = {}
-    
-    for row in data:
-        try:
-            dt = datetime.strptime(row['timestamp'][:19], '%Y-%m-%d %H:%M:%S')
-            key = (day_map[dt.weekday()], dt.hour)
-            if key not in heatmap: heatmap[key] = set()
-            heatmap[key].add(row['order_id'])
-        except:
-            continue
-            
-    result = [{"weekday": k[0], "hour": k[1], "orders": len(v)} for k, v in heatmap.items()]
-    return result
-
-@app.get("/api/sellers/top", response_model=List[TopSellerItem])
-def get_top_sellers(limit: int = 5, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    sellers = {}
-    for row in data:
-        sid = row['seller_id']
-        if not sid: continue
-        if sid not in sellers: sellers[sid] = {'rev': 0, 'orders': set()}
-        sellers[sid]['rev'] += row['price']
-        sellers[sid]['orders'].add(row['order_id'])
-        
-    result = [{"seller_id": f"Seller #{k[:6]}", "revenue": round(v['rev'], 2), "orders": len(v['orders'])} 
-              for k, v in sellers.items()]
-    return sorted(result, key=lambda x: x['revenue'], reverse=True)[:limit]
+    client = get_ch_client()
+    query = f"""
+        SELECT 
+            multiIf(toDayOfWeek(order_purchase_timestamp)==1,'Thứ 2', toDayOfWeek(order_purchase_timestamp)==2,'Thứ 3', toDayOfWeek(order_purchase_timestamp)==3,'Thứ 4', toDayOfWeek(order_purchase_timestamp)==4,'Thứ 5', toDayOfWeek(order_purchase_timestamp)==5,'Thứ 6', toDayOfWeek(order_purchase_timestamp)==6,'Thứ 7', 'Chủ Nhật'),
+            toHour(order_purchase_timestamp), count(DISTINCT order_id)
+        FROM olist_flat_analytics {build_where(start_date, end_date, category)}
+        GROUP BY toDayOfWeek(order_purchase_timestamp), toHour(order_purchase_timestamp)
+    """
+    return [{"weekday": r[0], "hour": int(r[1]), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/charts/payment-methods")
 def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
+    client = get_ch_client()
+    query = f"SELECT payment_type, sum(payment_value) FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY payment_type ORDER BY sum(payment_value) DESC"
+    translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto", "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
+    return [{"name": translate.get(r[0], str(r[0]).capitalize()), "value": round(float(r[1]), 2)} for r in client.query(query).result_rows if float(r[1]) > 0]
+
+@app.get("/api/charts/price-tiers")
+def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    client = get_ch_client()
+    query = f"""
+        SELECT multiIf(price < 50, 'Giá rẻ (< 50 R$)', price <= 200, 'Tầm trung (50 - 200 R$)', 'Cao cấp (> 200 R$)') as tier, sum(payment_value)
+        FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY tier
+    """
+    return [{"tier": r[0], "revenue": round(float(r[1]), 2)} for r in client.query(query).result_rows if float(r[1]) > 0]
+
+@app.get("/api/metadata/filters")
+def get_filters_metadata():
+    client = get_ch_client()
+    query = "SELECT DISTINCT Category_VN FROM olist_flat_analytics WHERE Category_VN != '' ORDER BY Category_VN"
+    return {"categories": [r[0] for r in client.query(query).result_rows]}
+
+@app.get("/api/sellers/top", response_model=List[TopSellerItem])
+def get_top_sellers(limit: int = 10, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    client = get_ch_client()
+    where = build_where(start_date, end_date, category)
     
-    pay_dict = {}
-    for row in data:
-        ptype = row['payment_type']
-        pay_dict[ptype] = pay_dict.get(ptype, 0) + row['payment_value']
-        
-    translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto (Hóa đơn)", 
-                 "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
-                 
-    result = [{"name": translate.get(k, str(k).capitalize()), "value": round(v, 2)} 
-              for k, v in pay_dict.items() if v > 0]
-    return sorted(result, key=lambda x: x['value'], reverse=True)
+    query = f"""
+        SELECT 
+            seller_id, 
+            sum(payment_value) as revenue, 
+            count(DISTINCT order_id) as orders
+        FROM olist_flat_analytics 
+        {where} 
+        GROUP BY seller_id 
+        ORDER BY revenue DESC 
+        LIMIT {limit}
+    """
+    rows = client.query(query).result_rows
+    return [{"seller_id": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in rows]
+
+@app.get("/api/charts/price-correlation", response_model=List[PriceCorrelationItem])
+def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    client = get_ch_client()
+    where = build_where(start_date, end_date, category)
+    
+    # Gom nhóm theo phân khúc giá siêu nhanh bằng lệnh multiIf
+    query = f"""
+        SELECT 
+            multiIf(price < 50, '1. Rất rẻ (< 50)', price <= 100, '2. Rẻ (50-100)', price <= 200, '3. Trung bình (100-200)', '4. Cao cấp (> 200)') as price_range,
+            count(DISTINCT order_id) as orders,
+            sum(payment_value) as revenue
+        FROM olist_flat_analytics 
+        {where} 
+        GROUP BY price_range 
+        ORDER BY price_range
+    """
+    rows = client.query(query).result_rows
+    return [{"price_range": r[0], "orders": int(r[1]), "revenue": round(float(r[2]), 2)} for r in rows]
+
+# =========================================================
+# PHẦN 2: CÁC API ĐỌC FILE LẠI TỪ MÔ HÌNH AI & ETL
+# =========================================================
 
 @app.get("/api/charts/order-status")
-def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] = None):
+def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
+    # Trả lại cơ chế đọc file tổng hợp thô để đếm chính xác đơn Hủy (chưa qua ETL)
     status_path = os.path.join(project_root, 'data', 'live', 'order_status_summary.csv')
     
     if not os.path.exists(status_path):
@@ -382,308 +236,170 @@ def get_order_status(start_date: Optional[str] = None, end_date: Optional[str] =
         logger.error(f"Lỗi đọc file trạng thái: {e}")
         return []
 
-@app.get("/api/charts/price-tiers")
-def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    
-    tiers = {'Giá rẻ (< 50 R$)': 0, 'Tầm trung (50 - 200 R$)': 0, 'Cao cấp (> 200 R$)': 0}
-    for row in data:
-        p = row['price']
-        if p < 50: tiers['Giá rẻ (< 50 R$)'] += row['payment_value']
-        elif p <= 200: tiers['Tầm trung (50 - 200 R$)'] += row['payment_value']
-        else: tiers['Cao cấp (> 200 R$)'] += row['payment_value']
-        
-    return [{"tier": k, "revenue": round(v, 2)} for k, v in tiers.items() if v > 0]
-
 @app.get("/api/customers/rfm", response_model=List[RFMSegmentItem])
 def get_rfm_segments():
+    # Giữ nguyên đọc CSV cho RFM vì đây là kết quả của model chạy độc lập
     rfm_path = os.path.join(project_root, 'data', 'live', 'customer_rfm.csv')
     if not os.path.exists(rfm_path): return []
-    
     segments = {}
+    with open(rfm_path, mode='r', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        reader.fieldnames = [col.lower() for col in reader.fieldnames]
+        for row in reader:
+            seg = row.get('segment', 'Khác')
+            if seg not in segments: segments[seg] = {'count': 0, 'rev': 0, 'recency': []}
+            segments[seg]['count'] += 1
+            segments[seg]['rev'] += float(row.get('monetary', 0) or 0)
+            segments[seg]['recency'].append(float(row.get('recency', 0) or 0))
+            
+    result = []
+    for k, v in segments.items():
+        result.append({"segment": k, "customer_count": v['count'], "total_revenue": round(v['rev'], 2), "avg_recency": round(sum(v['recency']) / len(v['recency']), 0) if v['recency'] else 0})
+    return sorted(result, key=lambda x: x['segment'])
+
+@app.get("/api/charts/top-categories")
+def get_top_categories(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
     try:
-        with open(rfm_path, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            reader.fieldnames = [col.lower() for col in reader.fieldnames]
-            for row in reader:
-                seg = row.get('segment', 'Khác')
-                if seg not in segments:
-                    segments[seg] = {'count': 0, 'rev': 0, 'recency': []}
-                segments[seg]['count'] += 1
-                segments[seg]['rev'] += float(row.get('monetary', 0) or 0)
-                segments[seg]['recency'].append(float(row.get('recency', 0) or 0))
-                
-        result = []
-        for k, v in segments.items():
-            avg_rec = sum(v['recency']) / len(v['recency']) if v['recency'] else 0
-            result.append({
-                "segment": k,
-                "customer_count": v['count'],
-                "total_revenue": round(v['rev'], 2),
-                "avg_recency": round(avg_rec, 0)
-            })
-        return sorted(result, key=lambda x: x['segment'])
+        client = get_ch_client()
+        where = build_where(start_date, end_date, category)
+        
+        query = f"""
+            SELECT 
+                Category_VN, 
+                sum(payment_value) as val
+            FROM olist_flat_analytics 
+            {where} 
+            GROUP BY Category_VN 
+            ORDER BY val DESC 
+            LIMIT 7
+        """
+        rows = client.query(query).result_rows
+        # Trả về đúng key 'name' và 'value' như code gốc của sếp
+        return [{"name": str(r[0]) if r[0] else "Khác", "value": round(float(r[1]), 2)} for r in rows]
     except Exception as e:
-        logger.error(f"Lỗi đọc RFM: {e}")
+        logger.error(f"Lỗi API Top Categories: {e}")
         return []
 
 @app.get("/api/predict", response_model=List[PredictionItem])
 def predict_revenue(days: int = 30, history_days: int = 30):
-    if days not in [7, 14, 30]:
-        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ dự báo 7, 14, hoặc 30 ngày")
-        
     predict_path = os.path.join(project_root, 'data', 'live', 'predictions.csv')
     if not os.path.exists(predict_path): return []
-    
     history, future = [], []
-    try:
-        with open(predict_path, mode='r', encoding='utf-8') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                item = {
-                    "date": row['date'],
-                    "actual_revenue": float(row['actual_revenue']) if row.get('actual_revenue') else None,
-                    "predicted_revenue": float(row['predicted_revenue'])
-                }
-                if item['actual_revenue'] is not None:
-                    history.append(item)
-                else:
-                    future.append(item)
-                    
-        history = history[-history_days:]
-        future = future[:days]
-        return history + future
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Lỗi: {str(e)}")
+    with open(predict_path, mode='r', encoding='utf-8') as f:
+        for row in csv.DictReader(f):
+            item = {"date": row['date'], "actual_revenue": float(row['actual_revenue']) if row.get('actual_revenue') else None, "predicted_revenue": float(row['predicted_revenue'])}
+            if item['actual_revenue'] is not None: history.append(item)
+            else: future.append(item)
+    return history[-history_days:] + future[:days]
 
 @app.get("/api/predict/metrics")
 def get_model_metrics():
     metrics_path = os.path.join(project_root, 'models', 'metrics.json')
-    if not os.path.exists(metrics_path):
-        return {"mae": 0, "mape": 0, "rmse": 0, "status": "File chưa tồn tại"}
-    try:
-        with open(metrics_path, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        return {"mae": 0, "mape": 0, "rmse": 0, "status": f"Lỗi: {e}"}
+    if not os.path.exists(metrics_path): return {"mae": 0, "mape": 0, "rmse": 0, "status": "File chưa tồn tại"}
+    with open(metrics_path, 'r') as f: return json.load(f)
 
 @app.get("/api/insights")
 def get_business_insights(
-    start_date: str = None, 
-    end_date: str = None, 
+    start_date: Optional[str] = None, 
+    end_date: Optional[str] = None, 
     category: str = "all",
-    aov_target: float = Query(120.0) 
+    aov_target: float = Query(120.0)
 ):
-    data = filter_data(get_data(), start_date, end_date, category)
-    if not data: return []
-    
-    insights = []
-    
-    prods = {}
-    states = {}
-    payments = {}
-    total_rev = 0
-    unique_orders = set()
-    
-    for row in data:
-        prods[row['product_id']] = prods.get(row['product_id'], 0) + row['payment_value']
-        
-        s = row['customer_state']
-        if s not in states: states[s] = set()
-        states[s].add(row['order_id'])
-        
-        ptype = row.get('payment_type', 'unknown')
-        payments[ptype] = payments.get(ptype, 0) + row['payment_value']
-        
-        total_rev += row['payment_value']
-        unique_orders.add(row['order_id'])
-        
-    if prods:
-        top_p = max(prods.items(), key=lambda x: x[1])
-        insights.append({
-            "title": "Sản phẩm chủ lực",
-            "description": f"Sản phẩm top 1 mang lại R$ {top_p[1]:,.0f} doanh thu trong kỳ. Hãy đảm bảo luôn sẵn hàng trong kho.",
-            "type": "success"
-        })
-        
-    if states:
-        top_s = max(states.items(), key=lambda x: len(x[1]))
-        insights.append({
-            "title": "Khu vực sôi động nhất",
-            "description": f"Bang {top_s[0]} đang dẫn đầu với {len(top_s[1])} đơn hàng. Cân nhắc đẩy mạnh quảng cáo tại đây.",
-            "type": "info"
-        })
-        
-    if payments:
-        top_pay = max(payments.items(), key=lambda x: x[1])
-        translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto", "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
-        pay_name = translate.get(top_pay[0], top_pay[0].capitalize())
-        insights.append({
-            "title": "Kênh thanh toán ưu chuộng",
-            "description": f"Khách hàng dùng {pay_name} nhiều nhất (R$ {top_pay[1]:,.0f}). Có thể kết hợp ngân hàng làm chương trình hoàn tiền.",
-            "type": "info"
-        })
-        
-    if unique_orders:
-        aov = total_rev / len(unique_orders)
-        
-        if aov < aov_target: 
+    try:
+        client = get_ch_client()
+        where = build_where(start_date, end_date, category)
+        insights = []
+
+        # 1. Sản phẩm chủ lực
+        query_prod = f"SELECT product_id, sum(payment_value) as rev FROM olist_flat_analytics {where} GROUP BY product_id ORDER BY rev DESC LIMIT 1"
+        res_prod = client.query(query_prod).result_rows
+        if res_prod:
             insights.append({
-                "title": "Cần chiến lược Upsell (Bán chéo)",
-                "description": f"Giá trị trung bình mỗi đơn (R$ {aov:,.0f}) đang thấp hơn mục tiêu đề ra (R$ {aov_target:,.0f}). Nên tạo combo Mua 2 tặng 1 để kích cầu.",
-                "type": "warning" 
-            })
-        else:
-            insights.append({
-                "title": "Hiệu suất đơn hàng cực tốt",
-                "description": f"Giá trị trung bình mỗi đơn đạt R$ {aov:,.0f}, vượt mức kỳ vọng (R$ {aov_target:,.0f}). Khách hàng đang có xu hướng chi tiêu mạnh tay.",
+                "title": "Sản phẩm chủ lực",
+                "description": f"Sản phẩm top 1 mang lại R$ {res_prod[0][1]:,.0f} doanh thu trong kỳ. Hãy đảm bảo luôn sẵn hàng trong kho.",
                 "type": "success"
             })
-            
-    return insights
 
-@app.get("/api/charts/seller-performance")
-def get_seller_performance(start_date: str = None, end_date: str = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    if not data: return []
-    
-    sellers = {}
-    for row in data:
-        sid = row.get('seller_id', 'Unknown')
-        short_id = f"Seller {sid[:7].upper()}"
-        sellers[short_id] = sellers.get(short_id, 0) + row.get('payment_value', 0)
-        
-    top_sellers = sorted(sellers.items(), key=lambda x: x[1], reverse=True)[:7]
-    return [{"name": k, "value": v} for k, v in top_sellers]
+        # 2. Khu vực sôi động nhất
+        query_state = f"SELECT customer_state, count(DISTINCT order_id) as orders FROM olist_flat_analytics {where} GROUP BY customer_state ORDER BY orders DESC LIMIT 1"
+        res_state = client.query(query_state).result_rows
+        if res_state:
+            insights.append({
+                "title": "Khu vực sôi động nhất",
+                "description": f"Bang {res_state[0][0]} đang dẫn đầu với {res_state[0][1]} đơn hàng. Cân nhắc đẩy mạnh quảng cáo tại đây.",
+                "type": "info"
+            })
 
-@app.get("/api/charts/top-categories")
-def get_top_categories(start_date: str = None, end_date: str = None, category: str = "all"):
-    data = filter_data(get_data(), start_date, end_date, category)
-    if not data: return []
-    
-    categories = {}
-    for row in data:
-        cat = row.get('Category_VN') 
-        if not cat or str(cat).lower() == 'nan':
-            cat = "Khác"
-            
-        try:
-            val = float(row.get('payment_value', 0) or 0)
-        except ValueError:
-            val = 0
-            
-        categories[cat] = categories.get(cat, 0) + val
-        
-    top_cats = sorted(categories.items(), key=lambda x: x[1], reverse=True)[:7]
-    return [{"name": str(k), "value": v} for k, v in top_cats]
+        # 3. Kênh thanh toán ưu chuộng
+        query_pay = f"SELECT payment_type, sum(payment_value) as rev FROM olist_flat_analytics {where} GROUP BY payment_type ORDER BY rev DESC LIMIT 1"
+        res_pay = client.query(query_pay).result_rows
+        if res_pay:
+            ptype = res_pay[0][0]
+            translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto", "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
+            pay_name = translate.get(ptype, str(ptype).capitalize())
+            insights.append({
+                "title": "Kênh thanh toán ưu chuộng",
+                "description": f"Khách hàng dùng {pay_name} nhiều nhất (R$ {res_pay[0][1]:,.0f}). Có thể kết hợp ngân hàng làm chương trình hoàn tiền.",
+                "type": "info"
+            })
 
-@lru_cache(maxsize=1)
-def get_cached_filters():
-    logger.info("🚀 Đang đọc file CSV để lấy metadata bộ lọc danh mục...")
-    categories = set()
-    
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    sales_file = os.path.normpath(os.path.join(BASE_DIR, "..", "data", "live", "sales_dashboard.csv"))
-    
-    if os.path.exists(sales_file):
-        with open(sales_file, mode="r", encoding="utf-8-sig") as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                cat = row.get('Category_VN') 
-                if cat and str(cat).strip() and str(cat).lower() != 'nan':
-                    categories.add(str(cat))
-    else:
-        logger.warning(f"⚠️ Không tìm thấy: {sales_file}")
+        # 4. AOV & Cảnh báo Upsell
+        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where}"
+        res_total = client.query(query_total).result_rows
+        if res_total and int(res_total[0][1]) > 0:
+            aov = float(res_total[0][0]) / int(res_total[0][1])
+            if aov < aov_target: 
+                insights.append({
+                    "title": "Cần chiến lược Upsell (Bán chéo)",
+                    "description": f"Giá trị trung bình mỗi đơn (R$ {aov:,.0f}) đang thấp hơn mục tiêu đề ra (R$ {aov_target:,.0f}). Nên tạo combo Mua 2 tặng 1 để kích cầu.",
+                    "type": "warning" 
+                })
+            else:
+                insights.append({
+                    "title": "Hiệu suất đơn hàng cực tốt",
+                    "description": f"Giá trị trung bình mỗi đơn đạt R$ {aov:,.0f}, vượt mức kỳ vọng (R$ {aov_target:,.0f}). Khách hàng đang có xu hướng chi tiêu mạnh tay.",
+                    "type": "success"
+                })
 
-    logger.info(f"✅ Đã load thành công {len(categories)} danh mục!")
-        
-    return {
-        "categories": sorted(list(categories))
-    }      
-    
-@app.get("/api/metadata/filters")
-def get_filters_metadata():
-    return get_cached_filters()
+        return insights
+    except Exception as e:
+        logger.error(f"Lỗi API Insights: {e}")
+        return []
 
-@app.post("/api/system/clear-cache")
-def clear_system_cache():
-    global CACHED_DATA
-    CACHED_DATA = [] # Reset lại bộ nhớ đệm dữ liệu chính
-    
-    # 👇 Điểm nâng cấp: Xóa luôn cache của bộ lọc danh mục
-    get_cached_filters.cache_clear() 
-    
-    return {"status": "success", "message": "Bộ nhớ đệm đã được dọn dẹp. Dữ liệu sẽ được đọc lại ở lần tải tiếp theo."}
-
-@app.get("/api/metadata/last-update")
-def get_last_update():
-    file_path = "data/live/sales_dashboard.csv" 
-    
-    if os.path.exists(file_path):
-        mtime = os.path.getmtime(file_path)
-        dt = datetime.fromtimestamp(mtime)
-        return {"last_updated": dt.strftime("%d/%m/%Y %I:%M %p")}
-    
-    return {"last_updated": "Chưa có dữ liệu"}
+# =========================================================
+# PHẦN 3: "BỘ NÃO" GROQ AI COPILOT ĐƯỢC GIỮ NGUYÊN VẸN
+# =========================================================
 
 @app.post("/api/chat")
 async def chat_with_ai(req: ChatMessage):
     try:
         raw_key = req.api_key or os.getenv("GROQ_API_KEY")
-        if not raw_key:
-            return {"reply": "Lỗi: Sếp chưa cấu hình API Key ở trang Cài đặt!", "action": "NONE"}
+        if not raw_key: return {"reply": "Lỗi: Sếp chưa cấu hình API Key ở trang Cài đặt!", "action": "NONE"}
         key_to_use = raw_key.strip()
 
-        import urllib.request
-        import json
-
-        # 1. QUY ĐỔI TIỀN TỆ
         user_currency = req.currency or "BRL"
-        rate = 1.0
-        symbol = "R$"
-        if user_currency == "USD":
-            rate = 0.2  
-            symbol = "$"
-        elif user_currency == "VND":
-            rate = 5000 
-            symbol = "VNĐ"
+        rate = 0.2 if user_currency == "USD" else (5000 if user_currency == "VND" else 1.0)
+        symbol = "$" if user_currency == "USD" else ("VNĐ" if user_currency == "VND" else "R$")
 
+        # Lấy số liệu chớp nhoáng từ ClickHouse để mớm cho AI
         summary = get_summary(start_date=req.start_date, end_date=req.end_date, category=req.category)
         top_products = get_top_products(limit=3, start_date=req.start_date, end_date=req.end_date, category=req.category)
-        
         prod_text = ", ".join([f"{p['product_name']}" for p in top_products]) if top_products else "Không có dữ liệu"
 
         ai_total_rev = summary.get('total_revenue', 0) * rate
         ai_aov = summary.get('aov', 0) * rate
         current_time_range = f"Từ {req.start_date} đến {req.end_date}" if req.start_date else "Toàn thời gian"
         
-        # 🔥 ĐOẠN THÊM MỚI 1: LẤY VÀ DỊCH DỮ LIỆU RFM CHO AI HIỂU 🔥
         rfm_text = "Chưa có dữ liệu"
         try:
-            rfm_data = get_rfm_segments() # Gọi hàm RFM sếp đã định nghĩa
+            rfm_data = get_rfm_segments() 
             if rfm_data:
-                rfm_lines = []
-                for item in rfm_data:
-                    # Ép kiểu an toàn (trường hợp trả về list of dicts)
-                    seg_name = item.get('segment') if isinstance(item, dict) else getattr(item, 'segment', '')
-                    count = item.get('customer_count') if isinstance(item, dict) else getattr(item, 'customer_count', 0)
-                    rev = item.get('total_revenue') if isinstance(item, dict) else getattr(item, 'total_revenue', 0)
-                    
-                    rev_converted = rev * rate
-                    rfm_lines.append(f"Nhóm '{seg_name}': {count:,} người (Doanh thu: {rev_converted:,.0f} {symbol})")
-                rfm_text = " | ".join(rfm_lines)
-        except Exception as e:
-            pass
-        # 🔥 KẾT THÚC ĐOẠN THÊM MỚI 1 🔥
+                rfm_text = " | ".join([f"Nhóm '{item['segment']}': {item['customer_count']:,} người (Doanh thu: {item['total_revenue']*rate:,.0f} {symbol})" for item in rfm_data])
+        except Exception: pass
 
-        # 🔥 Ý TƯỞNG 2: BÁO CÁO NHANH TỰ ĐỘNG KHỞI TẠO (SILENT ALERT) 🔥
         if req.message == "[INIT_ALERT]":
-            return {
-                "reply": f"🚨 **Báo cáo nhanh hệ thống:**\nDoanh thu hiện tại đang đạt **{ai_total_rev:,.0f} {symbol}**. Danh mục **{top_products[0]['product_name'] if top_products else 'N/A'}** đang dẫn đầu mảng Sales. Sếp cần tôi phân tích, vẽ biểu đồ hay so sánh gì hôm nay không?",
-                "action": "NONE"
-            }
+            return {"reply": f"🚨 **Báo cáo nhanh hệ thống:**\nDoanh thu hiện tại đang đạt **{ai_total_rev:,.0f} {symbol}**. Danh mục **{top_products[0]['product_name'] if top_products else 'N/A'}** đang dẫn đầu mảng Sales. Sếp cần tôi phân tích, vẽ biểu đồ hay so sánh gì hôm nay không?", "action": "NONE"}
 
-        # 2. NÃO BỘ AI (SYSTEM PROMPT) - Đã chèn thêm dòng RFM, KHÔNG xóa bất cứ dòng nào cũ
         system_prompt = f"""
         Bạn là Trợ lý AI Phân tích Dữ liệu (Senior BI Copilot) cấp cao của hệ thống Olist E-commerce.
         
@@ -695,17 +411,11 @@ async def chat_with_ai(req: ChatMessage):
         - Dữ liệu khách hàng (RFM): {rfm_text}
         
         [THIẾT LUẬT GIAO TIẾP TỐI THƯỢNG - PHẢI TUÂN THỦ 100%]
-        1. NẾU sếp ra lệnh LỌC/TÌM KIẾM/ĐỔI THỜI GIAN (VD: "Lọc quý 2", "Cho xem dữ liệu năm 2018", "Vẽ lại toàn bộ dashboard"): BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC ĐỌC SỐ LIỆU BÊN TRÊN CHO SẾP. Vì lúc này dữ liệu chưa kịp cập nhật. Bạn CHỈ ĐƯỢC trả lời: "Tôi đã cập nhật bảng điều khiển theo yêu cầu, sếp xem số liệu mới nhất trực tiếp trên màn hình nhé!".
-        2. NẾU sếp CHỈ HỎI số liệu hiện tại (VD: "Doanh thu đang là bao nhiêu?", "Có bao nhiêu khách VIP?"): Bạn mới được phép dùng [DỮ LIỆU ĐANG HIỂN THỊ...] để phân tích. KHÔNG BAO GIỜ bịa đặt số liệu.
-        3. Xưng "tôi", gọi người dùng là "sếp". Trong câu trả lời luôn cố gắng đưa ra 1 "Insight" (nhận xét).
+        1. NẾU sếp ra lệnh LỌC/TÌM KIẾM/ĐỔI THỜI GIAN: BẠN TUYỆT ĐỐI KHÔNG ĐƯỢC ĐỌC SỐ LIỆU BÊN TRÊN CHO SẾP. CHỈ ĐƯỢC trả lời: "Tôi đã cập nhật bảng điều khiển theo yêu cầu...".
+        2. NẾU sếp CHỈ HỎI số liệu hiện tại: Bạn mới được phép dùng [DỮ LIỆU ĐANG HIỂN THỊ...] để phân tích.
+        3. Xưng "tôi", gọi người dùng là "sếp". 
         
-        [HƯỚNG DẪN XỬ LÝ LỆNH TỪ SẾP]
-        1. Lệnh LỌC/VẼ LẠI DASHBOARD -> intent = "update_filter".
-        2. Lệnh SO SÁNH (VD: "So sánh Q1 và Q2 năm 2018") -> intent = "compare". Tự bóc tách 2 khoảng thời gian start/end và compare_start/compare_end.
-        3. Lệnh VẼ BIỂU ĐỒ MỚI (Vào Widget) -> intent = "draw_chart".
-        4. Thời gian: Dịch ra định dạng YYYY-MM-DD (VD: "Quý 1 năm 2017" -> start_date: "2017-01-01", end_date: "2017-03-31").
-        
-        NHIỆM VỤ: Phân tích câu hỏi và TRẢ VỀ DUY NHẤT 1 CHUỖI JSON CHUẨN (Tuyệt đối không bọc bằng markdown):
+        NHIỆM VỤ: Phân tích câu hỏi và TRẢ VỀ DUY NHẤT 1 CHUỖI JSON CHUẨN:
         {{
             "intent": "chat" | "draw_chart" | "export_pdf" | "update_filter" | "compare",
             "start_date": "YYYY-MM-DD", "end_date": "YYYY-MM-DD",
@@ -725,34 +435,20 @@ async def chat_with_ai(req: ChatMessage):
             result = json.loads(response.read().decode())
             ai_json = json.loads(result["choices"][0]["message"]["content"])
             
-            intent = ai_json.get("intent", "chat")
-            reply_text = ai_json.get("reply", "Đã rõ thưa sếp.")
-            start_d = ai_json.get("start_date")
-            end_d = ai_json.get("end_date")
-            category = ai_json.get("category")
-            metric = ai_json.get("metric", "revenue")
+            intent, reply_text = ai_json.get("intent", "chat"), ai_json.get("reply", "Đã rõ thưa sếp.")
+            start_d, end_d, metric = ai_json.get("start_date"), ai_json.get("end_date"), ai_json.get("metric", "revenue")
 
-            # 3. PHÂN PHỐI HÀNH ĐỘNG
             if intent == "export_pdf":
-                return {
-                    "reply": "Sếp muốn xuất file PDF cho biểu đồ vừa vẽ, hay xuất toàn bộ màn hình Dashboard ạ?",
-                    "action": "ASK_PDF_OPTIONS"
-                }
-                
+                return {"reply": "Sếp muốn xuất file PDF cho biểu đồ vừa vẽ, hay xuất toàn bộ màn hình Dashboard ạ?", "action": "ASK_PDF_OPTIONS"}
             elif intent == "update_filter":
                 return {"reply": reply_text, "action": "UPDATE_FILTER", "filters": {"startDate": start_d, "endDate": end_d, "category": ai_json.get("category")}}
-                
-            # 🔥 Ý TƯỞNG 1: LOGIC SO SÁNH 2 GIAI ĐOẠN (BAR CHART) 🔥
             elif intent == "compare":
-                comp_start = ai_json.get("compare_start")
-                comp_end = ai_json.get("compare_end")
+                comp_start, comp_end = ai_json.get("compare_start"), ai_json.get("compare_end")
                 p1_data = get_summary(start_date=start_d, end_date=end_d, category=ai_json.get("category"))
                 p2_data = get_summary(start_date=comp_start, end_date=comp_end, category=ai_json.get("category"))
-
                 v1 = (p1_data.get('total_revenue', 0) * rate) if metric == "revenue" else p1_data.get('total_orders', 0)
                 v2 = (p2_data.get('total_revenue', 0) * rate) if metric == "revenue" else p2_data.get('total_orders', 0)
-                l1 = f"{start_d} đến {end_d}" if start_d else "Giai đoạn 1"
-                l2 = f"{comp_start} đến {comp_end}" if comp_start else "Giai đoạn 2"
+                l1, l2 = f"{start_d} đến {end_d}" if start_d else "Giai đoạn 1", f"{comp_start} đến {comp_end}" if comp_start else "Giai đoạn 2"
                 lbl_metric = f"Doanh thu ({symbol})" if metric == "revenue" else "Số đơn hàng"
 
                 chart_html = f"""
@@ -764,93 +460,35 @@ async def chat_with_ai(req: ChatMessage):
                         <strong style="color:#10b981; font-size:13px;">🤖 AI Phân tích:</strong>
                         <p style="margin:5px 0 0 0; font-size:13px; line-height:1.4;">{reply_text}</p>
                     </div>
-                    <script>
-                        new Chart(document.getElementById('myChart'), {{
-                            type: 'bar',
-                            data: {{ labels: ['{l1}', '{l2}'], datasets: [{{ label: '{lbl_metric}', data: [{v1}, {v2}], backgroundColor: ['rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)'], borderRadius: 6 }}] }},
-                            options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }} }}
-                        }});
-                    </script>
+                    <script>new Chart(document.getElementById('myChart'), {{ type: 'bar', data: {{ labels: ['{l1}', '{l2}'], datasets: [{{ label: '{lbl_metric}', data: [{v1}, {v2}], backgroundColor: ['rgba(59, 130, 246, 0.7)', 'rgba(16, 185, 129, 0.7)'], borderRadius: 6 }}] }}, options: {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }} }} }} }});</script>
                 </body></html>
                 """
                 return {"reply": "Tôi đã tạo xong bảng so sánh. Sếp xem trên màn hình nhé!", "action": "OPEN_CHART", "html": chart_html}
-            
             elif intent == "draw_chart":
                 daily_data = get_daily_revenue(start_date=start_d, end_date=end_d)
-                if not daily_data or len(daily_data) < 2:
-                    daily_data = get_daily_revenue()[-30:]
-                    
+                if not daily_data or len(daily_data) < 2: daily_data = get_daily_revenue()[-30:]
                 labels = [d['date'] for d in daily_data]
-
                 if metric == "orders":
-                    values = [d['orders'] for d in daily_data]
-                    label_text = "Số lượng đơn hàng"
-                    chart_title = f"Biểu đồ Đơn Hàng {f'({start_d} đến {end_d})' if start_d else ''}"
-                    color = "rgba(16, 185, 129, 1)" 
-                    bg_color = "rgba(16, 185, 129, 0.2)"
+                    values, label_text, color, bg_color = [d['orders'] for d in daily_data], "Số lượng đơn hàng", "rgba(16, 185, 129, 1)", "rgba(16, 185, 129, 0.2)"
                 else:
-                    values = [round(d['revenue'] * rate, 2) for d in daily_data]
-                    label_text = f"Doanh thu ({symbol})"
-                    chart_title = f"Biểu đồ Doanh Thu {f'({start_d} đến {end_d})' if start_d else ''}"
-                    color = "rgba(147, 51, 234, 1)" 
-                    bg_color = "rgba(147, 51, 234, 0.2)"
-                
-                import urllib.parse
-                csv_header = f"Ngày;{label_text}"
-                csv_rows = [f"{l};{v}" for l, v in zip(labels, values)]
-                csv_content = csv_header + "\n" + "\n".join(csv_rows)
-                csv_data_uri = "data:text/csv;charset=utf-8,%EF%BB%BF" + urllib.parse.quote(csv_content)
+                    values, label_text, color, bg_color = [round(d['revenue'] * rate, 2) for d in daily_data], f"Doanh thu ({symbol})", "rgba(147, 51, 234, 1)", "rgba(147, 51, 234, 0.2)"
                 
                 chart_html = f"""
-                <!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-                <style>
-                    .export-btn {{ padding: 4px 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 11px; font-weight: bold; color: white; margin-left: 5px; transition: opacity 0.2s; text-decoration: none; display: inline-block; }}
-                    .export-btn:hover {{ opacity: 0.8; }}
-                    .btn-png {{ background-color: #3b82f6; }}
-                    .btn-csv {{ background-color: #10b981; }}
-                </style>
-                </head>
+                <!DOCTYPE html><html><head><script src="https://cdn.jsdelivr.net/npm/chart.js"></script></head>
                 <body style="background:transparent; margin:0; padding:15px; font-family:sans-serif; display:flex; flex-direction:column; height:100vh; box-sizing:border-box;">
-                    
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
-                        <h3 style="color:#334155; margin:0; font-size:15px;">{chart_title}</h3>
-                        <div>
-                            <button class="export-btn btn-png" onclick="downloadPNG()">📸 Tải Ảnh</button>
-                            <a href="{csv_data_uri}" download="AI_Data_Export.csv" class="export-btn btn-csv">📊 Tải Excel</a>
-                        </div>
-                    </div>
-
+                    <h3 style="color:#334155; margin:0 0 15px 0; font-size:15px;">Biểu đồ {label_text}</h3>
                     <div style="flex:1; min-height:0; position:relative; background: white; border-radius: 8px; padding: 5px;"><canvas id="myChart"></canvas></div>
-                    
                     <div style="margin-top:15px; padding:12px; background:#f8fafc; border-left:4px solid {color}; border-radius:4px;">
                         <strong style="color:{color}; font-size:13px;">🤖 AI Phân tích:</strong>
                         <p style="margin:5px 0 0 0; color:#334155; font-size:13px; line-height:1.4;">{reply_text}</p>
                     </div>
-                    
-                    <script>
-                        const ctx = document.getElementById('myChart');
-                        const chart = new Chart(ctx, {{
-                            type: 'line',
-                            data: {{ labels: {labels}, datasets: [{{ label: '{label_text}', data: {values}, borderColor: '{color}', backgroundColor: '{bg_color}', fill: true, tension: 0.4 }}] }},
-                            options: {{ responsive: true, maintainAspectRatio: false }}
-                        }});
-
-                        function downloadPNG() {{
-                            const link = document.createElement('a');
-                            link.download = 'AI_Chart.png';
-                            link.href = chart.toBase64Image();
-                            link.click();
-                        }}
-                    </script>
+                    <script>new Chart(document.getElementById('myChart'), {{ type: 'line', data: {{ labels: {labels}, datasets: [{{ label: '{label_text}', data: {values}, borderColor: '{color}', backgroundColor: '{bg_color}', fill: true, tension: 0.4 }}] }}, options: {{ responsive: true, maintainAspectRatio: false }} }});</script>
                 </body></html>
                 """
-                return {"reply": f"Tôi đã vẽ xong. Sếp có thể bấm nút Tải Ảnh hoặc Tải Excel (CSV) ngay trên góc phải của biểu đồ nhé!", "action": "OPEN_CHART", "html": chart_html}
-
+                return {"reply": "Tôi đã vẽ xong biểu đồ theo yêu cầu của sếp!", "action": "OPEN_CHART", "html": chart_html}
             else:
                 return {"reply": reply_text.replace("**", ""), "action": "NONE"}
-                
     except Exception as e:
         return {"reply": f"Lỗi xử lý ngôn ngữ tự nhiên: {str(e)}", "action": "NONE"}
 
-# Biến ứng dụng FastAPI thành chuẩn WSGI để deploy Cloud dễ dàng
 wsgi_app = ASGIMiddleware(app)

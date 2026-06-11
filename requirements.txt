@@ -1,6 +1,7 @@
 fastapi
-uvicorn
+uvicorn[standard]
 pandas
 pydantic
 a2wsgi
 python-multipart
+clickhouse-connect

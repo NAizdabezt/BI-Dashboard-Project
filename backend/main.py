@@ -23,6 +23,7 @@ def get_ch_client():
         port=int(os.getenv('CH_PORT', '8443')),
         username=os.getenv('CH_USER', 'default'),
         password=os.getenv('CH_PASSWORD', 're0p~~Ii1mVXS'),
+        database=os.getenv('CH_DATABASE', 'default'),
         secure=True
     )
 
@@ -88,7 +89,7 @@ def health_check():
     try:
         client = get_ch_client()
         client.command("SELECT 1")
-        rows = client.query("SELECT count() FROM olist_flat_analytics").result_rows
+        rows = client.query("SELECT count() FROM sales_dashboard").result_rows
         return {"status": "ok", "clickhouse": "connected", "rows": rows[0][0]}
     except Exception as e:
         return {"status": "error", "detail": str(e)}
@@ -102,13 +103,13 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
     where_clause = build_where(start_date, end_date, category)
     
     try:
-        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where_clause}"
+        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM sales_dashboard {where_clause}"
         res_total = client.query(query_total).result_rows[0]
         total_rev = float(res_total[0] or 0)
         total_ord = int(res_total[1] or 0)
         aov = total_rev / total_ord if total_ord > 0 else 0
 
-        query_growth = f"SELECT toYYYYMM(order_purchase_timestamp) as m, sum(payment_value) FROM olist_flat_analytics {where_clause} GROUP BY m ORDER BY m"
+        query_growth = f"SELECT toYYYYMM(order_purchase_timestamp) as m, sum(payment_value) FROM sales_dashboard {where_clause} GROUP BY m ORDER BY m"
         res_growth = client.query(query_growth).result_rows
         growth_rate = 0.0
         if len(res_growth) >= 2:
@@ -122,13 +123,13 @@ def get_summary(start_date: Optional[str] = None, end_date: Optional[str] = None
 def get_daily_revenue(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
     client = get_ch_client()
     where = build_where(start_date, end_date, category)
-    query = f"SELECT toString(toDate(order_purchase_timestamp)) as d, sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where} GROUP BY d ORDER BY d"
+    query = f"SELECT toString(toDate(order_purchase_timestamp)) as d, sum(payment_value), count(DISTINCT order_id) FROM sales_dashboard {where} GROUP BY d ORDER BY d"
     return [{"date": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/metadata/date-range")
 def get_date_range():
     client = get_ch_client()
-    query = "SELECT toString(min(toDate(order_purchase_timestamp))), toString(max(toDate(order_purchase_timestamp))) FROM olist_flat_analytics"
+    query = "SELECT toString(min(toDate(order_purchase_timestamp))), toString(max(toDate(order_purchase_timestamp))) FROM sales_dashboard"
     res = client.query(query).result_rows[0]
     return {"min_date": res[0] or "2017-01-01", "max_date": res[1] or "2018-12-31"}
 
@@ -136,13 +137,13 @@ def get_date_range():
 def get_top_products(limit: int = 7, start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
     client = get_ch_client()
     where = build_where(start_date, end_date, category)
-    query = f"SELECT concat(Category_VN, ' (#', substring(product_id, 1, 6), ')'), sum(price), count(DISTINCT order_id) FROM olist_flat_analytics {where} GROUP BY product_id, Category_VN ORDER BY sum(price) DESC LIMIT {limit}"
+    query = f"SELECT concat(Category_VN, ' (#', substring(product_id, 1, 6), ')'), sum(price), count(DISTINCT order_id) FROM sales_dashboard {where} GROUP BY product_id, Category_VN ORDER BY sum(price) DESC LIMIT {limit}"
     return [{"product_name": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/charts/top-states", response_model=List[StateItem])
 def get_sales_by_state(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
     client = get_ch_client()
-    query = f"SELECT customer_state, sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY customer_state ORDER BY sum(payment_value) DESC"
+    query = f"SELECT customer_state, sum(payment_value), count(DISTINCT order_id) FROM sales_dashboard {build_where(start_date, end_date, category)} GROUP BY customer_state ORDER BY sum(payment_value) DESC"
     return [{"state": r[0], "revenue": round(float(r[1]), 2), "orders": int(r[2])} for r in client.query(query).result_rows]
 
 @app.get("/api/charts/shopping-behavior", response_model=List[HeatmapItem])
@@ -152,7 +153,7 @@ def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[s
         SELECT 
             multiIf(toDayOfWeek(order_purchase_timestamp)==1,'Thứ 2', toDayOfWeek(order_purchase_timestamp)==2,'Thứ 3', toDayOfWeek(order_purchase_timestamp)==3,'Thứ 4', toDayOfWeek(order_purchase_timestamp)==4,'Thứ 5', toDayOfWeek(order_purchase_timestamp)==5,'Thứ 6', toDayOfWeek(order_purchase_timestamp)==6,'Thứ 7', 'Chủ Nhật'),
             toHour(order_purchase_timestamp), count(DISTINCT order_id)
-        FROM olist_flat_analytics {build_where(start_date, end_date, category)}
+        FROM sales_dashboard {build_where(start_date, end_date, category)}
         GROUP BY toDayOfWeek(order_purchase_timestamp), toHour(order_purchase_timestamp)
     """
     return [{"weekday": r[0], "hour": int(r[1]), "orders": int(r[2])} for r in client.query(query).result_rows]
@@ -160,7 +161,7 @@ def get_shopping_behavior(start_date: Optional[str] = None, end_date: Optional[s
 @app.get("/api/charts/payment-methods")
 def get_payment_methods(start_date: Optional[str] = None, end_date: Optional[str] = None, category: str = "all"):
     client = get_ch_client()
-    query = f"SELECT payment_type, sum(payment_value) FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY payment_type ORDER BY sum(payment_value) DESC"
+    query = f"SELECT payment_type, sum(payment_value) FROM sales_dashboard {build_where(start_date, end_date, category)} GROUP BY payment_type ORDER BY sum(payment_value) DESC"
     translate = {"credit_card": "Thẻ tín dụng", "boleto": "Boleto", "voucher": "Voucher", "debit_card": "Thẻ ghi nợ"}
     return [{"name": translate.get(r[0], str(r[0]).capitalize()), "value": round(float(r[1]), 2)} for r in client.query(query).result_rows if float(r[1]) > 0]
 
@@ -169,14 +170,14 @@ def get_price_tiers(start_date: Optional[str] = None, end_date: Optional[str] = 
     client = get_ch_client()
     query = f"""
         SELECT multiIf(price < 50, 'Giá rẻ (< 50 R$)', price <= 200, 'Tầm trung (50 - 200 R$)', 'Cao cấp (> 200 R$)') as tier, sum(payment_value)
-        FROM olist_flat_analytics {build_where(start_date, end_date, category)} GROUP BY tier
+        FROM sales_dashboard {build_where(start_date, end_date, category)} GROUP BY tier
     """
     return [{"tier": r[0], "revenue": round(float(r[1]), 2)} for r in client.query(query).result_rows if float(r[1]) > 0]
 
 @app.get("/api/metadata/filters")
 def get_filters_metadata():
     client = get_ch_client()
-    query = "SELECT DISTINCT Category_VN FROM olist_flat_analytics WHERE Category_VN != '' ORDER BY Category_VN"
+    query = "SELECT DISTINCT Category_VN FROM sales_dashboard WHERE Category_VN != '' ORDER BY Category_VN"
     return {"categories": [r[0] for r in client.query(query).result_rows]}
 
 @app.get("/api/sellers/top", response_model=List[TopSellerItem])
@@ -189,7 +190,7 @@ def get_top_sellers(limit: int = 10, start_date: Optional[str] = None, end_date:
             seller_id, 
             sum(payment_value) as revenue, 
             count(DISTINCT order_id) as orders
-        FROM olist_flat_analytics 
+        FROM sales_dashboard 
         {where} 
         GROUP BY seller_id 
         ORDER BY revenue DESC 
@@ -209,7 +210,7 @@ def get_price_correlation(start_date: Optional[str] = None, end_date: Optional[s
             multiIf(price < 50, '1. Rất rẻ (< 50)', price <= 100, '2. Rẻ (50-100)', price <= 200, '3. Trung bình (100-200)', '4. Cao cấp (> 200)') as price_range,
             count(DISTINCT order_id) as orders,
             sum(payment_value) as revenue
-        FROM olist_flat_analytics 
+        FROM sales_dashboard 
         {where} 
         GROUP BY price_range 
         ORDER BY price_range
@@ -283,7 +284,7 @@ def get_top_categories(start_date: Optional[str] = None, end_date: Optional[str]
             SELECT 
                 Category_VN, 
                 sum(payment_value) as val
-            FROM olist_flat_analytics 
+            FROM sales_dashboard 
             {where} 
             GROUP BY Category_VN 
             ORDER BY val DESC 
@@ -327,7 +328,7 @@ def get_business_insights(
         insights = []
 
         # 1. Sản phẩm chủ lực
-        query_prod = f"SELECT product_id, sum(payment_value) as rev FROM olist_flat_analytics {where} GROUP BY product_id ORDER BY rev DESC LIMIT 1"
+        query_prod = f"SELECT product_id, sum(payment_value) as rev FROM sales_dashboard {where} GROUP BY product_id ORDER BY rev DESC LIMIT 1"
         res_prod = client.query(query_prod).result_rows
         if res_prod:
             insights.append({
@@ -337,7 +338,7 @@ def get_business_insights(
             })
 
         # 2. Khu vực sôi động nhất
-        query_state = f"SELECT customer_state, count(DISTINCT order_id) as orders FROM olist_flat_analytics {where} GROUP BY customer_state ORDER BY orders DESC LIMIT 1"
+        query_state = f"SELECT customer_state, count(DISTINCT order_id) as orders FROM sales_dashboard {where} GROUP BY customer_state ORDER BY orders DESC LIMIT 1"
         res_state = client.query(query_state).result_rows
         if res_state:
             insights.append({
@@ -347,7 +348,7 @@ def get_business_insights(
             })
 
         # 3. Kênh thanh toán ưu chuộng
-        query_pay = f"SELECT payment_type, sum(payment_value) as rev FROM olist_flat_analytics {where} GROUP BY payment_type ORDER BY rev DESC LIMIT 1"
+        query_pay = f"SELECT payment_type, sum(payment_value) as rev FROM sales_dashboard {where} GROUP BY payment_type ORDER BY rev DESC LIMIT 1"
         res_pay = client.query(query_pay).result_rows
         if res_pay:
             ptype = res_pay[0][0]
@@ -360,7 +361,7 @@ def get_business_insights(
             })
 
         # 4. AOV & Cảnh báo Upsell
-        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM olist_flat_analytics {where}"
+        query_total = f"SELECT sum(payment_value), count(DISTINCT order_id) FROM sales_dashboard {where}"
         res_total = client.query(query_total).result_rows
         if res_total and int(res_total[0][1]) > 0:
             aov = float(res_total[0][0]) / int(res_total[0][1])

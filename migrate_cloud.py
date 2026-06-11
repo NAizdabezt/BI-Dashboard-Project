@@ -19,7 +19,7 @@ def migrate_to_cloud():
     
     print("🏗️ Tạo bảng trên Cloud (nếu chưa có)...")
     client.command("""
-        CREATE TABLE IF NOT EXISTS olist_flat_analytics (
+        CREATE TABLE IF NOT EXISTS sales_dashboard (
             order_id String,
             order_purchase_timestamp DateTime,
             payment_value Float32,
@@ -36,10 +36,10 @@ def migrate_to_cloud():
     """)
     
     print("🧹 Dọn dẹp dữ liệu cũ (nếu có)...")
-    client.command("TRUNCATE TABLE olist_flat_analytics")
+    client.command("TRUNCATE TABLE sales_dashboard")
     
     print(f"🚀 Đang bơm {len(df)} dòng dữ liệu lên Cloud. Chờ một xíu nhé...")
-    client.insert_df('olist_flat_analytics', df)
+    client.insert_df('sales_dashboard', df)
     
     print("✅ THÀNH CÔNG! Dữ liệu đã an tọa trên ClickHouse Cloud!")
 

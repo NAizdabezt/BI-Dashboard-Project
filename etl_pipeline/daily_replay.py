@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from process_utils import load_and_merge_data
 from rfm_utils import calculate_rfm 
 from train_prophet import retrain_prophet_model
+import clickhouse_connect
 
 RAW_DATA_DIR = 'data/raw'
 LIVE_DATA_DIR = 'data/live'
@@ -48,24 +49,43 @@ def main():
 
     os.makedirs(LIVE_DATA_DIR, exist_ok=True)
 
-    # 4. GHI DỮ LIỆU VÀO FILE (Tránh phình to Git)
+    # 4. GHI DỮ LIỆU VÀO FILE (Tránh phình to Git) VÀ BẮN VÀO CLICKHOUSE
     if not os.path.exists(OUTPUT_DASHBOARD):
-        # Chạy lần đầu: Lấy tất cả data từ đầu đến hết ngày hiện tại
         print("✨ Khởi tạo file lần đầu...")
         initial_data = full_clean_data[full_clean_data['order_purchase_timestamp'] <= end_of_day]
         initial_data.to_csv(OUTPUT_DASHBOARD, index=False)
-        current_cumulative_data = initial_data # Lưu tạm để lát tính RFM
+        current_cumulative_data = initial_data 
+        data_to_push = initial_data # ---> Dữ liệu cần đẩy cho lần đầu
     else:
-        # Chạy các ngày sau: CHỈ NỐI (Append) các dòng mới sinh ra trong hôm nay
         if not new_daily_data.empty:
-            print(f"📂 Nối thêm {len(new_daily_data)} dòng giao dịch mới.")
-            # mode='a' là Append, header=False để không in lại tiêu đề cột
+            print(f"📂 Nối thêm {len(new_daily_data)} dòng giao dịch mới vào CSV.")
             new_daily_data.to_csv(OUTPUT_DASHBOARD, mode='a', header=False, index=False)
+            data_to_push = new_daily_data # ---> Dữ liệu cần đẩy cho các ngày sau
         else:
             print("⚠️ Hôm nay không có giao dịch mới nào.")
+            data_to_push = pd.DataFrame()
         
-        # Load lại file CSV hiện tại để tính RFM cho AI
         current_cumulative_data = pd.read_csv(OUTPUT_DASHBOARD)
+
+    # ---------------------------------------------------------
+    # BƯỚC 4.5: MÔ-TƠ BẮN DỮ LIỆU VÀO CLICKHOUSE LOCAL
+    # ---------------------------------------------------------
+    if not data_to_push.empty:
+        try:
+            print("🚀 Đang dội bom dữ liệu mới vào ClickHouse...")
+            # Kết nối tới ClickHouse ngầm trên WSL
+            client = clickhouse_connect.get_client(host='localhost', port=8123, username='default', password='')
+            
+            # Đảm bảo cột timestamp không bị lỗi định dạng khi đẩy
+            data_to_push = data_to_push.copy()
+            data_to_push['order_purchase_timestamp'] = pd.to_datetime(data_to_push['order_purchase_timestamp'])
+            
+            # Thực thi đẩy Dataframe vào bảng
+            client.insert_df('olist_db.olist_flat_analytics', data_to_push)
+            print(f"✅ Đã chèn thành công {len(data_to_push)} dòng vào ClickHouse!")
+        except Exception as e:
+            print(f"❌ Lỗi khi đẩy vào ClickHouse: {e}")
+    # ---------------------------------------------------------
 
     # 5. CẬP NHẬT RFM CHO MÔ HÌNH AI (ĐỪNG QUÊN BƯỚC NÀY)
     df_rfm = calculate_rfm(current_cumulative_data, end_of_day)

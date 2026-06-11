@@ -22,7 +22,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const fetchDateRange = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         const response = await fetch(`${baseUrl}/api/metadata/date-range`)
         if (response.ok) {
           const { min_date, max_date } = await response.json()

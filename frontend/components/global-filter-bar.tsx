@@ -20,7 +20,7 @@ export function GlobalFilterBar() {
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         const response = await fetch(`${baseUrl}/api/metadata/filters`)
         if (response.ok) {
           const data = await response.json()
@@ -33,7 +33,7 @@ export function GlobalFilterBar() {
 
     const fetchLastUpdate = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         const response = await fetch(`${baseUrl}/api/metadata/last-update`)
         if (response.ok) {
           const data = await response.json()
@@ -87,7 +87,7 @@ export function GlobalFilterBar() {
   const handleClearFilters = async () => {
     setCategory("all")
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
       const response = await fetch(`${baseUrl}/api/metadata/date-range`)
       if (response.ok) {
         const { min_date, max_date } = await response.json()

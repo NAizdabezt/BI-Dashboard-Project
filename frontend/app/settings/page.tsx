@@ -45,7 +45,7 @@ export default function SettingsPage() {
     setIsSyncing(true)
     setSyncSuccess(false)
     try {
-      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
       const response = await fetch(`${baseUrl}/api/system/clear-cache`, {
         method: 'POST', 
       })

@@ -45,7 +45,7 @@ export function BiInsights() {
     const fetchInsights = async () => {
       setLoading(true)
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         
         // 👇 3. Lấy Ngưỡng AOV từ Tab Cài đặt (Nếu chưa cài thì mặc định 120) 👇
         const aovTarget = localStorage.getItem("app_aov_target") || "120";

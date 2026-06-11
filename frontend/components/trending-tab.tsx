@@ -21,7 +21,7 @@ export function TrendingTab() {
     const fetchTrends = async () => {
       setLoading(true)
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         // Dùng lại API top-categories nhưng dùng UI khác để thể hiện Xu hướng
         const response = await fetch(`${baseUrl}/api/charts/top-categories?start_date=${startDate}&end_date=${endDate}&category=${category}`)
         if (response.ok) {

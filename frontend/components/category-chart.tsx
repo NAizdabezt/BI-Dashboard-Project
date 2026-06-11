@@ -25,7 +25,7 @@ export function CategoryChart({ startDate, endDate }: CategoryChartProps) {
     const fetchCategories = async () => {
       setLoading(true)
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         // 👇 2. ĐÃ SỬA: Rút category ra khỏi link gọi API 👇
         const response = await fetch(`${baseUrl}/api/charts/top-categories?start_date=${startDate}&end_date=${endDate}`)
         if (response.ok) {

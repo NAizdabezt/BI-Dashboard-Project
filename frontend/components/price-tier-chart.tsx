@@ -63,7 +63,7 @@ export function PriceTierChart({ startDate, endDate, category }: PriceTierChartP
 
   useEffect(() => {
     setLoading(true)
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
     
     fetch(`${baseUrl}/api/charts/price-tiers?start_date=${startDate}&end_date=${endDate}&category=${category}`)
       .then(res => res.json())

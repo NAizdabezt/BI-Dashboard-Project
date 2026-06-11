@@ -47,7 +47,7 @@ export function HeatmapChart({ startDate, endDate, category }: HeatmapChartProps
       setLoading(true)
       try {
         // 2. Dùng biến môi trường để chạy mượt cả ở Local và Server
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         
         // 3. Nối ống nước dữ liệu vào API
         const response = await fetch(`${baseUrl}/api/charts/shopping-behavior?start_date=${startDate}&end_date=${endDate}&category=${category}`) 

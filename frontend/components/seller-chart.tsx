@@ -26,7 +26,7 @@ export function SellerChart({ startDate, endDate, category }: SellerChartProps) 
     const fetchSellers = async () => {
       setLoading(true)
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         
         // 2. ĐÃ SỬA: Nối category vào URL API
         const response = await fetch(`${baseUrl}/api/charts/seller-performance?start_date=${startDate}&end_date=${endDate}&category=${category}`)

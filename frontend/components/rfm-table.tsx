@@ -34,7 +34,7 @@ export function RFMTable() {
   useEffect(() => {
     const fetchRFM = async () => {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         const res = await fetch(`${baseUrl}/api/customers/rfm`)
         if (res.ok) {
           const data = await res.json()

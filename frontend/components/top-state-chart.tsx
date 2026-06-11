@@ -27,7 +27,7 @@ export function TopStateChart({ startDate, endDate, category }: TopStateChartPro
       setLoading(true)
       try {
         // 2. ĐÃ SỬA: Tự động trỏ Link API và gắn tham số lọc
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         const response = await fetch(`${baseUrl}/api/charts/top-states?start_date=${startDate}&end_date=${endDate}&category=${category}`) 
         
         if (!response.ok) throw new Error("Failed to fetch states")

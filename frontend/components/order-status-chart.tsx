@@ -34,7 +34,7 @@ export function OrderStatusChart({ startDate, endDate }: OrderStatusChartProps) 
   useEffect(() => {
     setLoading(true)
     // 2. Tự động nhận diện môi trường
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
     
     // 3. Chỉ gắn tham số Ngày tháng vào URL
     fetch(`${baseUrl}/api/charts/order-status?start_date=${startDate}&end_date=${endDate}`)

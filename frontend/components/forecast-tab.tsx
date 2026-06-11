@@ -22,7 +22,7 @@ export function ForecastTab() {
     const fetchFutureData = async () => {
       setLoading(true)
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://bi-dashboard-project.onrender.com"
+        const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
         // Gọi API lấy 30 ngày quá khứ + 30 ngày tương lai để làm cơ sở so sánh
         const res = await fetch(`${baseUrl}/api/predict?days=30&history_days=30`)
         if (res.ok) {

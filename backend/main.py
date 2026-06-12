@@ -1,14 +1,16 @@
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import json
 import os
 import csv
+import io
 import logging
 from datetime import datetime
 from a2wsgi import ASGIMiddleware
 import urllib.request
+import pandas as pd
 import clickhouse_connect
 
 # Configure logging
@@ -507,5 +509,54 @@ async def chat_with_ai(req: ChatMessage):
                 return {"reply": reply_text.replace("**", ""), "action": "NONE"}
     except Exception as e:
         return {"reply": f"Lỗi xử lý ngôn ngữ tự nhiên: {str(e)}", "action": "NONE"}
+
+# =========================================================
+# PHẦN 4: INGEST DATA — API & CSV UPLOAD
+# =========================================================
+
+REQUIRED_COLS = [
+    'order_id', 'order_purchase_timestamp', 'price', 'freight_value',
+    'payment_value', 'payment_type', 'order_status', 'seller_id',
+    'customer_unique_id', 'customer_city', 'customer_state', 'Category_VN', 'product_id'
+]
+
+def _prepare_df(df: pd.DataFrame) -> pd.DataFrame:
+    missing = [c for c in REQUIRED_COLS if c not in df.columns]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Thiếu cột: {missing}")
+    df = df[REQUIRED_COLS].copy()
+    df['order_purchase_timestamp'] = pd.to_datetime(df['order_purchase_timestamp'])
+    for col in ['price', 'freight_value', 'payment_value']:
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+    return df
+
+@app.post("/api/upload-csv")
+async def upload_csv(file: UploadFile = File(...), replace: bool = False):
+    try:
+        content = await file.read()
+        df = pd.read_csv(io.StringIO(content.decode('utf-8')))
+        df = _prepare_df(df)
+        client = get_ch_client()
+        if replace:
+            client.command("TRUNCATE TABLE sales_dashboard")
+        client.insert_df('sales_dashboard', df)
+        return {"status": "ok", "rows_inserted": len(df), "replaced": replace}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/ingest")
+async def ingest_json(data: List[dict]):
+    try:
+        df = pd.DataFrame(data)
+        df = _prepare_df(df)
+        client = get_ch_client()
+        client.insert_df('sales_dashboard', df)
+        return {"status": "ok", "rows_inserted": len(df)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 wsgi_app = ASGIMiddleware(app)

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 // 👇 1. ĐÃ SỬA: Import thêm icon Key cho phần Cấu hình AI 👇
-import { Settings, Moon, Sun, Monitor, DollarSign, BrainCircuit, Target, Database, RefreshCw, CheckCircle2, Key } from "lucide-react"
+import { Settings, Moon, Sun, Monitor, DollarSign, BrainCircuit, Target, Database, RefreshCw, CheckCircle2, Key, Upload, FileText, Link } from "lucide-react"
 import { useCurrency } from "@/contexts/CurrencyContext"
 
 export default function SettingsPage() {
@@ -19,6 +19,11 @@ export default function SettingsPage() {
   const [syncSuccess, setSyncSuccess] = useState(false)
 
   const [apiKey, setApiKey] = useState("")
+
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [replaceData, setReplaceData] = useState(false)
+  const [uploadStatus, setUploadStatus] = useState<"idle"|"uploading"|"success"|"error">("idle")
+  const [uploadMsg, setUploadMsg] = useState("")
 
   useEffect(() => {
     setMounted(true)
@@ -39,6 +44,25 @@ export default function SettingsPage() {
   const handleSaveKey = () => {
     localStorage.setItem("GROQ_API_KEY", apiKey);
     alert("Đã lưu khóa API thành công!");
+  }
+
+  const handleUploadCsv = async () => {
+    if (!csvFile) return
+    setUploadStatus("uploading")
+    setUploadMsg("")
+    try {
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || "https://web-production-0f132.up.railway.app"
+      const form = new FormData()
+      form.append("file", csvFile)
+      const res = await fetch(`${baseUrl}/api/upload-csv?replace=${replaceData}`, { method: "POST", body: form })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.detail || "Upload thất bại")
+      setUploadStatus("success")
+      setUploadMsg(`✅ Đã nạp ${json.rows_inserted.toLocaleString()} dòng vào ClickHouse Cloud!`)
+    } catch (e: unknown) {
+      setUploadStatus("error")
+      setUploadMsg(`❌ ${e instanceof Error ? e.message : "Lỗi không xác định"}`)
+    }
   }
 
   const handleSyncData = async () => {
@@ -160,6 +184,63 @@ export default function SettingsPage() {
                 </div>
               </CardContent>
             </Card>
+            {/* CARD IMPORT DỮ LIỆU */}
+            <Card className="shadow-sm border-sky-200 rounded-xl overflow-hidden dark:border-sky-900/50 bg-white dark:bg-slate-950">
+              <CardHeader className="border-b border-slate-100 dark:border-slate-900 pb-4 bg-sky-50/30 dark:bg-sky-900/10">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Upload className="h-5 w-5 text-sky-500" /> Nhập dữ liệu
+                </CardTitle>
+                <CardDescription>Nạp dữ liệu mới vào hệ thống qua file CSV hoặc API.</CardDescription>
+              </CardHeader>
+              <CardContent className="p-6 space-y-5">
+
+                {/* CSV UPLOAD */}
+                <div className="space-y-3">
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <FileText className="h-4 w-4 text-sky-500" /> Upload file CSV
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    File cần có đủ các cột: <code className="bg-slate-100 dark:bg-slate-800 px-1 rounded text-xs">order_id, order_purchase_timestamp, price, freight_value, payment_value, payment_type, order_status, seller_id, customer_unique_id, customer_city, customer_state, Category_VN, product_id</code>
+                  </p>
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => { setCsvFile(e.target.files?.[0] || null); setUploadStatus("idle"); setUploadMsg("") }}
+                    className="block w-full text-sm text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-sky-50 file:text-sky-700 hover:file:bg-sky-100 dark:file:bg-sky-900/30 dark:file:text-sky-400"
+                  />
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600 dark:text-slate-400">
+                    <input type="checkbox" checked={replaceData} onChange={(e) => setReplaceData(e.target.checked)} className="rounded accent-red-500" />
+                    Xóa dữ liệu cũ trước khi nạp (Replace)
+                  </label>
+                  {uploadMsg && (
+                    <p className={`text-sm font-medium rounded-lg px-3 py-2 ${uploadStatus === "success" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"}`}>
+                      {uploadMsg}
+                    </p>
+                  )}
+                  <button
+                    onClick={handleUploadCsv}
+                    disabled={!csvFile || uploadStatus === "uploading"}
+                    className="w-full py-2.5 bg-sky-600 text-white rounded-xl hover:bg-sky-700 font-bold transition-colors text-sm shadow-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {uploadStatus === "uploading" ? <><RefreshCw className="h-4 w-4 animate-spin" /> Đang nạp dữ liệu...</> : <><Upload className="h-4 w-4" /> Nạp lên ClickHouse Cloud</>}
+                  </button>
+                </div>
+
+                {/* API ENDPOINT */}
+                <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-2">
+                  <p className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                    <Link className="h-4 w-4 text-sky-500" /> Ingest qua API (JSON)
+                  </p>
+                  <p className="text-xs text-slate-500">Gửi mảng JSON qua POST request:</p>
+                  <code className="block bg-slate-100 dark:bg-slate-800 rounded-lg px-3 py-2 text-xs text-slate-700 dark:text-slate-300 break-all">
+                    POST https://web-production-0f132.up.railway.app/api/ingest
+                  </code>
+                  <p className="text-xs text-slate-400">Body: <code>{"[{\"order_id\":\"...\", ...}]"}</code> — xem schema đầy đủ tại <a href="https://web-production-0f132.up.railway.app/docs" target="_blank" className="text-sky-500 underline">/docs</a></p>
+                </div>
+
+              </CardContent>
+            </Card>
+
           </div>
 
           {/* CỘT PHẢI */}

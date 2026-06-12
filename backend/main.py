@@ -7,11 +7,13 @@ import os
 import csv
 import io
 import logging
+import threading
 from datetime import datetime
 from a2wsgi import ASGIMiddleware
 import urllib.request
 import pandas as pd
 import clickhouse_connect
+from confluent_kafka import Producer, Consumer, KafkaError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,6 +30,42 @@ def get_ch_client():
         database=os.getenv('CH_DATABASE', 'default'),
         secure=True
     )
+
+# ── KAFKA CONFIG ──────────────────────────────────────────
+KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'data-ingest')
+_KAFKA_CONF = {
+    'bootstrap.servers': os.getenv('KAFKA_BOOTSTRAP', 'pkc-312o0.ap-southeast-1.aws.confluent.cloud:9092'),
+    'security.protocol': 'SASL_SSL',
+    'sasl.mechanisms': 'PLAIN',
+    'sasl.username': os.getenv('KAFKA_KEY', 'GW46PW27DZDPBVYL'),
+    'sasl.password': os.getenv('KAFKA_SECRET', 'cflt8xYxufDDOxJ/UU0D9gapGkLMMc34Zw5stk4csAfwfqk7avmbWq5UveoKE1EA'),
+}
+
+def get_kafka_producer():
+    return Producer(_KAFKA_CONF)
+
+def kafka_consumer_loop():
+    conf = {**_KAFKA_CONF, 'group.id': 'bi-dashboard-group', 'auto.offset.reset': 'earliest'}
+    consumer = Consumer(conf)
+    consumer.subscribe([KAFKA_TOPIC])
+    logger.info(f"🟢 Kafka consumer đang lắng nghe topic '{KAFKA_TOPIC}'...")
+    while True:
+        msg = consumer.poll(1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            if msg.error().code() != KafkaError._PARTITION_EOF:
+                logger.error(f"Kafka error: {msg.error()}")
+            continue
+        try:
+            records = json.loads(msg.value().decode('utf-8'))
+            df = pd.DataFrame(records)
+            df = _prepare_df(df)
+            get_ch_client().insert_df('sales_dashboard', df)
+            logger.info(f"✅ Kafka consumer: đã insert {len(df)} dòng vào ClickHouse")
+        except Exception as e:
+            logger.error(f"❌ Kafka consumer insert lỗi: {e}")
+# ──────────────────────────────────────────────────────────
 
 def build_where(start_date: str, end_date: str, category: str) -> str:
     conds = []
@@ -74,13 +112,27 @@ project_root = os.path.dirname(current_dir)
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("=== Bắt đầu khởi động Server Backend (Bản siêu tốc ClickHouse) ===")
+    logger.info("=== Bắt đầu khởi động Server Backend ===")
     try:
-        client = get_ch_client()
-        client.command("SELECT 1")
-        logger.info("✅ Kết nối tới ClickHouse Local thành công mĩ mãn!")
+        get_ch_client().command("SELECT 1")
+        logger.info("✅ Kết nối ClickHouse Cloud thành công!")
     except Exception as e:
-        logger.error(f"❌ Không thể kết nối tới ClickHouse: {e}")
+        logger.error(f"❌ Lỗi ClickHouse: {e}")
+    try:
+        t = threading.Thread(target=kafka_consumer_loop, daemon=True)
+        t.start()
+        logger.info("✅ Kafka consumer thread đã khởi động!")
+    except Exception as e:
+        logger.error(f"❌ Lỗi khởi động Kafka consumer: {e}")
+
+@app.get("/api/kafka/status")
+def kafka_status():
+    try:
+        p = get_kafka_producer()
+        p.flush(timeout=5)
+        return {"status": "connected", "broker": _KAFKA_CONF['bootstrap.servers'], "topic": KAFKA_TOPIC}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
 
 # =========================================================
 # PHẦN 1: CÁC API PHÂN TÍCH SIÊU TỐC BẰNG CLICKHOUSE
@@ -549,11 +601,14 @@ async def upload_csv(file: UploadFile = File(...), replace: bool = False):
 @app.post("/api/ingest")
 async def ingest_json(data: List[dict]):
     try:
+        # Validate schema trước khi đẩy vào Kafka
         df = pd.DataFrame(data)
-        df = _prepare_df(df)
-        client = get_ch_client()
-        client.insert_df('sales_dashboard', df)
-        return {"status": "ok", "rows_inserted": len(df)}
+        _prepare_df(df)
+        # Đẩy vào Kafka topic
+        producer = get_kafka_producer()
+        producer.produce(KAFKA_TOPIC, value=json.dumps(data).encode('utf-8'))
+        producer.flush()
+        return {"status": "queued", "message": f"Đã đẩy {len(data)} records vào Kafka topic '{KAFKA_TOPIC}'. Consumer sẽ insert vào ClickHouse ngay!", "rows_queued": len(data)}
     except HTTPException:
         raise
     except Exception as e:

@@ -5,3 +5,4 @@ pydantic
 a2wsgi
 python-multipart
 clickhouse-connect
+confluent-kafka
